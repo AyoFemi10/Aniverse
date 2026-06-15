@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   # ─── Anime API ──────────────────────────────────────────────────────────────
   api:
@@ -19,6 +17,7 @@ services:
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
       REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-15000}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      PUBLIC_URL: ${PUBLIC_URL:-https://apis.ayohost.site}
     depends_on:
       redis:
         condition: service_healthy

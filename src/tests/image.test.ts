@@ -44,10 +44,10 @@ afterAll(async () => {
 // ─── Unit: image utility helpers ─────────────────────────────────────────────
 
 describe('proxyImageUrl / decodeProxyUrl', () => {
-  it('encodes an upstream URL into a proxy path', () => {
+  it('encodes an upstream URL into a /proxy/ path', () => {
     const raw = 'https://cdn.aniwaves.ru/images/naruto.jpg';
     const proxied = proxyImageUrl(raw);
-    expect(proxied).toMatch(/^\/api\/v1\/image\?url=/);
+    expect(proxied).toMatch(/\/proxy\//);
     // Must not contain the upstream domain
     expect(proxied).not.toContain('aniwaves.ru');
   });
@@ -55,8 +55,9 @@ describe('proxyImageUrl / decodeProxyUrl', () => {
   it('round-trips correctly', () => {
     const raw = 'https://cdn.aniwaves.ru/images/naruto.jpg';
     const proxied = proxyImageUrl(raw);
-    const encoded = new URLSearchParams(proxied.replace('/api/v1/image?', '')).get('url') ?? '';
-    expect(decodeProxyUrl(encoded)).toBe(raw);
+    // token is the last path segment
+    const token = proxied.split('/proxy/')[1];
+    expect(decodeProxyUrl(token)).toBe(raw);
   });
 
   it('does not double-encode already-proxied URLs', () => {
@@ -89,39 +90,34 @@ describe('isAllowedImageHost', () => {
 
 // ─── Route: GET /api/v1/image ─────────────────────────────────────────────────
 
-describe('GET /api/v1/image', () => {
-  it('returns 400 when url param is missing', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/v1/image' });
+describe('GET /proxy/:token', () => {
+  it('returns 400 for a clearly invalid token', async () => {
+    const res = await app.inject({ method: 'GET', url: '/proxy/!!!' });
     expect(res.statusCode).toBe(400);
     expect(JSON.parse(res.body).error.code).toBe('INVALID_PARAMS');
   });
 
-  it('returns 400 for an invalid (non-base64url) token', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/v1/image?url=!!!notvalid!!!' });
-    expect(res.statusCode).toBe(400);
-  });
-
   it('returns 403 for a disallowed host', async () => {
-    const encoded = Buffer.from('https://evil.com/img.jpg').toString('base64url');
-    const res = await app.inject({ method: 'GET', url: `/api/v1/image?url=${encoded}` });
+    const token = Buffer.from('https://evil.com/img.jpg').toString('base64url');
+    const res = await app.inject({ method: 'GET', url: `/proxy/${token}` });
     expect(res.statusCode).toBe(403);
     expect(JSON.parse(res.body).error.code).toBe('FORBIDDEN');
   });
 
   it('returns 200 and image bytes for a valid allowed URL', async () => {
     const raw = 'https://cdn.aniwaves.ru/images/naruto.jpg';
-    const encoded = Buffer.from(raw).toString('base64url');
-    const res = await app.inject({ method: 'GET', url: `/api/v1/image?url=${encoded}` });
+    const token = Buffer.from(raw).toString('base64url');
+    const res = await app.inject({ method: 'GET', url: `/proxy/${token}` });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toMatch(/image/);
     expect(res.headers['cache-control']).toMatch(/public/);
     expect(res.headers['x-powered-by']).toBe('AniVerse');
   });
 
-  it('sets long cache-control header', async () => {
+  it('sets long immutable cache-control header', async () => {
     const raw = 'https://cdn.aniwaves.ru/images/naruto.jpg';
-    const encoded = Buffer.from(raw).toString('base64url');
-    const res = await app.inject({ method: 'GET', url: `/api/v1/image?url=${encoded}` });
+    const token = Buffer.from(raw).toString('base64url');
+    const res = await app.inject({ method: 'GET', url: `/proxy/${token}` });
     expect(res.headers['cache-control']).toContain('immutable');
   });
 });

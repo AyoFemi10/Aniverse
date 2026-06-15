@@ -7,10 +7,10 @@ A production-grade anime streaming REST API built with Fastify, TypeScript, Redi
 ## Base URL
 
 ```
-http://localhost:3000
+http://localhost:5000
 ```
 
-Interactive Swagger docs → `http://localhost:3000/docs`
+Interactive Swagger docs → `http://localhost:5000/docs`
 
 ---
 
@@ -331,8 +331,8 @@ cp .env.example .env
 docker compose up --build
 ```
 
-API → `http://localhost:3000`  
-Docs → `http://localhost:3000/docs`
+API → `http://localhost:5000`  
+Docs → `http://localhost:5000/docs`
 
 ### Without Docker
 

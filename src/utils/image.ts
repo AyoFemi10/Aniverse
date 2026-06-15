@@ -1,37 +1,46 @@
 /**
  * Image proxy utilities.
  *
- * proxyImageUrl(rawUrl) → "/api/v1/image?url=<base64url-encoded>"
+ * proxyImageUrl(rawUrl)
+ *   → "https://apis.ayohost.site/proxy/aHR0cHM6Ly9jZG4uYW5pd2F2ZXMucnUv..."
  *
- * The encoded URL is opaque to clients – they never see the upstream domain.
- * The proxy route decodes it, validates the origin, and streams the bytes.
+ * The base64url token is opaque to clients — the upstream domain is never exposed.
+ * Set PUBLIC_URL in your environment to control the domain prefix.
+ * Defaults to an empty string so relative paths work in development.
+ *
+ * Examples:
+ *   PUBLIC_URL=https://apis.ayohost.site  →  https://apis.ayohost.site/proxy/<token>
+ *   PUBLIC_URL=(unset)                    →  /proxy/<token>
  */
 
-/** Encode a raw upstream image URL into an AniVerse proxy path */
-export function proxyImageUrl(rawUrl: string): string {
-  if (!rawUrl) return '';
-  // Already proxied – don't double-encode
-  if (rawUrl.startsWith('/api/v1/image')) return rawUrl;
-  const encoded = Buffer.from(rawUrl).toString('base64url');
-  return `/api/v1/image?url=${encoded}`;
+/** Return the configured public base URL (no trailing slash) */
+function publicBase(): string {
+  return (process.env.PUBLIC_URL ?? '').replace(/\/+$/, '');
 }
 
-/** Decode the proxy param back to the original URL (used by the route handler) */
-export function decodeProxyUrl(encoded: string): string {
-  return Buffer.from(encoded, 'base64url').toString('utf8');
+/** Encode a raw upstream image URL into an AniVerse proxy URL */
+export function proxyImageUrl(rawUrl: string): string {
+  if (!rawUrl) return '';
+  // Already proxied — don't double-encode
+  if (rawUrl.includes('/proxy/')) return rawUrl;
+  const token = Buffer.from(rawUrl).toString('base64url');
+  return `${publicBase()}/proxy/${token}`;
+}
+
+/** Decode the path token back to the original upstream URL */
+export function decodeProxyUrl(token: string): string {
+  return Buffer.from(token, 'base64url').toString('utf8');
 }
 
 /**
  * Allowlist of upstream image hostnames.
- * Only these origins will be fetched – anything else gets a 403.
- * Add more CDN domains here as needed.
+ * Only these origins are fetched — anything else gets a 403.
  */
 export const ALLOWED_IMAGE_HOSTS = new Set([
   'aniwaves.ru',
   'cdn.aniwaves.ru',
   'img.aniwaves.ru',
   'static.aniwaves.ru',
-  // common image CDNs used by anime sites
   'gogocdn.net',
   'cdn.gogocdn.net',
   'img9.9anime.id',
@@ -44,7 +53,6 @@ export const ALLOWED_IMAGE_HOSTS = new Set([
 export function isAllowedImageHost(url: string): boolean {
   try {
     const { hostname } = new URL(url);
-    // Allow exact match or any subdomain of an allowed host
     return [...ALLOWED_IMAGE_HOSTS].some(
       (allowed) => hostname === allowed || hostname.endsWith(`.${allowed}`),
     );
