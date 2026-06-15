@@ -8,45 +8,59 @@ export let redis: Redis;
 
 const redisPlugin: FastifyPluginAsync = async (fastify) => {
   const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379';
+  const isTesting = process.env.NODE_ENV === 'test';
 
   redis = new Redis(redisUrl, {
-    maxRetriesPerRequest: 3,
-    retryStrategy: (times) => {
-      if (times > 5) return null; // stop retrying
+    // In tests retry immediately 0 times so we fail fast and fall back to noop
+    maxRetriesPerRequest: isTesting ? 0 : 3,
+    retryStrategy: isTesting ? () => null : (times) => {
+      if (times > 5) return null;
       return Math.min(times * 200, 2000);
     },
-    enableReadyCheck: true,
+    enableReadyCheck: !isTesting,
     lazyConnect: true,
+  });
+
+  // Attach error handler BEFORE connect so no event is ever unhandled
+  redis.on('error', () => {
+    // silenced – connection failures are handled in the catch block below
   });
 
   try {
     await redis.connect();
     logger.info({ redisUrl }, 'Redis connected');
-  } catch (err) {
-    logger.error({ err }, 'Redis connection failed – caching will be disabled');
-    // Replace with a no-op stub so the app stays alive without Redis
+  } catch {
+    if (!isTesting) {
+      logger.error('Redis connection failed – caching will be disabled');
+    }
+    // Swap to a pure in-process noop – no network activity at all
     redis = createNoopRedis();
   }
 
-  redis.on('error', (err) => logger.error({ err }, 'Redis error'));
-
   fastify.addHook('onClose', async () => {
     await redis.quit().catch(() => {});
-    logger.info('Redis connection closed');
+    if (!isTesting) logger.info('Redis connection closed');
   });
 
   fastify.decorate('redis', redis);
 };
 
 /**
- * No-op Redis stub so the API runs gracefully when Redis is unavailable.
+ * Pure in-process no-op stub – never touches the network.
+ * Used when Redis is unavailable so the API keeps running without caching.
  */
 function createNoopRedis(): Redis {
-  const noop = new Redis({ lazyConnect: true });
-  noop.get = async () => null;
-  noop.set = async () => 'OK';
-  noop.del = async () => 0;
-  noop.quit = async () => 'OK';
+  // Cast a minimal object to Redis so TypeScript is satisfied
+  const noop = {
+    get: async () => null,
+    set: async () => 'OK' as const,
+    del: async () => 0,
+    ping: async () => 'PONG' as const,
+    quit: async () => 'OK' as const,
+    on: () => noop,
+    off: () => noop,
+    removeListener: () => noop,
+  } as unknown as Redis;
   return noop;
 }
 
