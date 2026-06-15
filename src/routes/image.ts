@@ -103,7 +103,7 @@ const imageRoute: FastifyPluginAsync = async (fastify) => {
           maxRedirects: 5,
         });
 
-        const contentType = upstream.headers['content-type'] ?? 'image/jpeg';
+        const contentType = String(upstream.headers['content-type'] ?? 'image/jpeg');
 
         // Only forward known image types
         const baseType = contentType.split(';')[0].trim();
@@ -123,7 +123,7 @@ const imageRoute: FastifyPluginAsync = async (fastify) => {
 
         // Forward Content-Length when available so clients can show a progress bar
         const contentLength = upstream.headers['content-length'];
-        if (contentLength) reply.header('Content-Length', contentLength);
+        if (contentLength) reply.header('Content-Length', String(contentLength));
 
         return reply.send(upstream.data);
       } catch (err) {
