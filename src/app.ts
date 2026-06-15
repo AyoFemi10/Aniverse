@@ -23,8 +23,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     trustProxy: true,
     ajv: {
       customOptions: {
-        strict: 'log',
-        keywords: ['kind', 'modifier'],
+        strict: false,        // allows "example", "kind", "modifier" keywords
       },
     },
   });

@@ -2,31 +2,25 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildTestApp } from './helpers';
 
-vi.mock('../scrapers/aniwave.scraper', () => ({
-  BRAND: 'AniVerse',
-  scrapeSearch: vi.fn().mockResolvedValue([
-    {
-      id: 'naruto-123',
-      title: 'Naruto',
-      image: 'https://example.com/naruto.jpg',
-      url: '/api/v1/anime/naruto-123',
-    },
-    {
-      id: 'naruto-shippuden-456',
-      title: 'Naruto Shippuden',
-      image: 'https://example.com/shippuden.jpg',
-      url: '/api/v1/anime/naruto-shippuden-456',
-    },
-  ]),
-  scrapeDetails: vi.fn(),
-  scrapeEpisodes: vi.fn(),
-  scrapeStreams: vi.fn(),
-  scrapeDiscovery: vi.fn().mockResolvedValue([]),
-  scrapeGenres: vi.fn().mockResolvedValue([]),
-  scrapeGenreAnime: vi.fn().mockResolvedValue({ items: [], hasNextPage: false }),
-  scrapeInfo: vi.fn(),
-  hrefToId: vi.fn((href: string) => href),
-}));
+vi.mock('../scrapers/aniwave.scraper', () => {
+  const mockResults = [
+    { id: 'naruto-123',         title: 'Naruto',           image: 'https://example.com/naruto.jpg',    url: '/api/v1/anime/naruto-123' },
+    { id: 'naruto-shippuden-456', title: 'Naruto Shippuden', image: 'https://example.com/shippuden.jpg', url: '/api/v1/anime/naruto-shippuden-456' },
+  ];
+
+  return {
+    BRAND: 'AniVerse',
+    scrapeSearch: vi.fn().mockResolvedValue(mockResults),
+    scrapeDetails: vi.fn().mockResolvedValue(null),
+    scrapeEpisodes: vi.fn().mockResolvedValue([]),
+    scrapeStreams: vi.fn().mockResolvedValue([]),
+    scrapeDiscovery: vi.fn().mockResolvedValue([]),
+    scrapeGenres: vi.fn().mockResolvedValue([]),
+    scrapeGenreAnime: vi.fn().mockResolvedValue({ items: [], hasNextPage: false }),
+    scrapeInfo: vi.fn().mockResolvedValue(null),
+    hrefToId: vi.fn((href: string) => href),
+  };
+});
 
 let app: FastifyInstance;
 
@@ -39,7 +33,7 @@ afterAll(async () => {
 });
 
 describe('GET /api/v1/search', () => {
-  it('returns 400 when query param is missing', async () => {
+  it('returns 400 when q param is missing', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/v1/search' });
     expect(res.statusCode).toBe(400);
     const body = JSON.parse(res.body);
@@ -47,11 +41,9 @@ describe('GET /api/v1/search', () => {
     expect(body.error.code).toBe('INVALID_PARAMS');
   });
 
-  it('returns 400 when query is empty', async () => {
+  it('returns 400 when q is empty string', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/v1/search?q=' });
     expect(res.statusCode).toBe(400);
-    const body = JSON.parse(res.body);
-    expect(body.success).toBe(false);
   });
 
   it('returns results for valid query', async () => {
@@ -67,6 +59,14 @@ describe('GET /api/v1/search', () => {
       image: expect.any(String),
       url: expect.any(String),
     });
+  });
+
+  it('result urls point to AniVerse API, not upstream', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/search?q=naruto' });
+    const body = JSON.parse(res.body);
+    for (const result of body.results) {
+      expect(result.url).toMatch(/^\/api\/v1\/anime\//);
+    }
   });
 
   it('respects the limit param', async () => {

@@ -5,13 +5,13 @@ import { buildTestApp } from './helpers';
 vi.mock('../scrapers/aniwave.scraper', () => ({
   BRAND: 'AniVerse',
   scrapeSearch: vi.fn().mockResolvedValue([]),
-  scrapeDetails: vi.fn(),
-  scrapeEpisodes: vi.fn(),
-  scrapeStreams: vi.fn(),
+  scrapeDetails: vi.fn().mockResolvedValue(null),
+  scrapeEpisodes: vi.fn().mockResolvedValue([]),
+  scrapeStreams: vi.fn().mockResolvedValue([]),
   scrapeDiscovery: vi.fn().mockResolvedValue([]),
   scrapeGenres: vi.fn().mockResolvedValue([]),
   scrapeGenreAnime: vi.fn().mockResolvedValue({ items: [], hasNextPage: false }),
-  scrapeInfo: vi.fn(),
+  scrapeInfo: vi.fn().mockResolvedValue(null),
   hrefToId: vi.fn((href: string) => href),
 }));
 
@@ -29,11 +29,10 @@ describe('GET /health', () => {
   it('returns 200 with ok status', async () => {
     const res = await app.inject({ method: 'GET', url: '/health' });
     expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.status).toBe('ok');
+    expect(JSON.parse(res.body).status).toBe('ok');
   });
 
-  it('includes uptime', async () => {
+  it('includes numeric uptime', async () => {
     const res = await app.inject({ method: 'GET', url: '/health' });
     const body = JSON.parse(res.body);
     expect(typeof body.uptime).toBe('number');
@@ -46,7 +45,7 @@ describe('GET /health', () => {
     expect(['ok', 'unavailable']).toContain(body.redis);
   });
 
-  it('includes timestamp', async () => {
+  it('includes ISO timestamp', async () => {
     const res = await app.inject({ method: 'GET', url: '/health' });
     const body = JSON.parse(res.body);
     expect(typeof body.timestamp).toBe('string');

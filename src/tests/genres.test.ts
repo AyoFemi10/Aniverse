@@ -2,38 +2,42 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildTestApp } from './helpers';
 
-const mockGenres = [
-  { id: 'action', name: 'Action', url: 'https://aniwaves.ru/genre/action' },
-  { id: 'romance', name: 'Romance', url: 'https://aniwaves.ru/genre/romance' },
-  { id: 'fantasy', name: 'Fantasy', url: 'https://aniwaves.ru/genre/fantasy' },
-];
+vi.mock('../scrapers/aniwave.scraper', () => {
+  const mockGenres = [
+    { id: 'action',  name: 'Action',  url: '/api/v1/genres/action' },
+    { id: 'romance', name: 'Romance', url: '/api/v1/genres/romance' },
+    { id: 'fantasy', name: 'Fantasy', url: '/api/v1/genres/fantasy' },
+  ];
 
-const mockGenreAnime = {
-  items: [
-    {
-      id: 'naruto-123',
-      title: 'Naruto',
-      image: 'https://example.com/naruto.jpg',
-      url: 'https://aniwaves.ru/watch/naruto-123',
-      episodes: 220,
-      type: 'TV',
-    },
-  ],
-  hasNextPage: true,
-};
+  const mockGenreAnime = {
+    items: [
+      {
+        id: 'naruto-123',
+        title: 'Naruto',
+        image: 'https://example.com/naruto.jpg',
+        url: '/api/v1/anime/naruto-123',
+        episodes: 220,
+        type: 'TV',
+      },
+    ],
+    hasNextPage: true,
+  };
 
-vi.mock('../scrapers/aniwave.scraper', () => ({
-  BRAND: 'AniVerse',
-  scrapeSearch: vi.fn().mockResolvedValue([]),
-  scrapeDetails: vi.fn(),
-  scrapeEpisodes: vi.fn(),
-  scrapeStreams: vi.fn(),
-  scrapeDiscovery: vi.fn().mockResolvedValue([]),
-  scrapeGenres: vi.fn().mockResolvedValue(mockGenres),
-  scrapeGenreAnime: vi.fn().mockResolvedValue(mockGenreAnime),
-  scrapeInfo: vi.fn(),
-  hrefToId: vi.fn((href: string) => href),
-}));
+  return {
+    BRAND: 'AniVerse',
+    scrapeSearch: vi.fn().mockResolvedValue([]),
+    scrapeDetails: vi.fn().mockResolvedValue(null),
+    scrapeEpisodes: vi.fn().mockResolvedValue([]),
+    scrapeStreams: vi.fn().mockResolvedValue([]),
+    scrapeDiscovery: vi.fn().mockResolvedValue([]),
+    scrapeGenres: vi.fn().mockResolvedValue(mockGenres),
+    scrapeGenreAnime: vi.fn().mockResolvedValue(mockGenreAnime),
+    scrapeInfo: vi.fn().mockResolvedValue(null),
+    hrefToId: vi.fn((href: string) => href),
+  };
+});
+
+const GENRE_COUNT = 3;
 
 let app: FastifyInstance;
 
@@ -69,11 +73,10 @@ describe('GET /api/v1/genres', () => {
     }
   });
 
-  it('returns total count', async () => {
+  it('returns correct total count', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/v1/genres' });
     const body = JSON.parse(res.body);
-    expect(typeof body.total).toBe('number');
-    expect(body.total).toBe(mockGenres.length);
+    expect(body.total).toBe(GENRE_COUNT);
   });
 
   it('includes cached flag', async () => {
@@ -103,15 +106,6 @@ describe('GET /api/v1/genres/:genre', () => {
     expect(typeof body.hasNextPage).toBe('boolean');
   });
 
-  it('returns 400 for invalid genre slug with special chars', async () => {
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/v1/genres/action!@#',
-    });
-    // Special chars get URL-encoded and won't match the regex pattern, returning 400
-    expect([400, 404]).toContain(res.statusCode);
-  });
-
   it('item shape is correct', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/v1/genres/action' });
     const body = JSON.parse(res.body);
@@ -121,5 +115,10 @@ describe('GET /api/v1/genres/:genre', () => {
       image: expect.any(String),
       url: expect.any(String),
     });
+  });
+
+  it('returns 400 for invalid genre slug', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/genres/action%21%40%23' });
+    expect([400, 404]).toContain(res.statusCode);
   });
 });

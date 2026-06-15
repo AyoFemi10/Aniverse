@@ -54,7 +54,14 @@ const searchRoute: FastifyPluginAsync = async (fastify) => {
               cached: { type: 'boolean' },
             },
           },
-          400: { $ref: '#/components/schemas/ErrorResponse' },
+          400: {
+            description: 'Validation error',
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              error: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } } },
+            },
+          },
         },
       },
     },

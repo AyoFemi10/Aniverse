@@ -3,6 +3,18 @@ import { aniwaveService } from '../services/aniwave.service';
 import { AnimeParamsSchema } from '../schemas/anime.schema';
 import { ValidationError } from '../utils/errors';
 
+// Reusable inline error response shape (avoids $ref which requires Swagger to be ready)
+const errorSchema = {
+  type: 'object',
+  properties: {
+    success: { type: 'boolean' },
+    error: {
+      type: 'object',
+      properties: { code: { type: 'string' }, message: { type: 'string' } },
+    },
+  },
+} as const;
+
 const animeRoute: FastifyPluginAsync = async (fastify) => {
   // ─── GET /anime/:id ──────────────────────────────────────────────────────────
 
@@ -17,11 +29,7 @@ const animeRoute: FastifyPluginAsync = async (fastify) => {
           type: 'object',
           required: ['id'],
           properties: {
-            id: {
-              type: 'string',
-              description: 'Anime slug (e.g. naruto-123)',
-              example: 'naruto-123',
-            },
+            id: { type: 'string', description: 'Anime slug (e.g. naruto-123)' },
           },
         },
         response: {
@@ -29,7 +37,7 @@ const animeRoute: FastifyPluginAsync = async (fastify) => {
             description: 'Anime details',
             type: 'object',
             properties: {
-              success: { type: 'boolean', example: true },
+              success: { type: 'boolean' },
               anime: {
                 type: 'object',
                 properties: {
@@ -46,7 +54,8 @@ const animeRoute: FastifyPluginAsync = async (fastify) => {
               cached: { type: 'boolean' },
             },
           },
-          404: { $ref: '#/components/schemas/ErrorResponse' },
+          404: errorSchema,
+          400: errorSchema,
         },
       },
     },
@@ -55,9 +64,7 @@ const animeRoute: FastifyPluginAsync = async (fastify) => {
       if (!parsed.success) {
         throw new ValidationError(parsed.error.errors.map((e) => e.message).join(', '));
       }
-
       const { data: anime, cached } = await aniwaveService.details(parsed.data.id);
-
       return reply.send({ success: true, anime, cached });
     },
   );
@@ -75,7 +82,7 @@ const animeRoute: FastifyPluginAsync = async (fastify) => {
           type: 'object',
           required: ['id'],
           properties: {
-            id: { type: 'string', description: 'Anime slug', example: 'naruto-123' },
+            id: { type: 'string', description: 'Anime slug' },
           },
         },
         response: {
@@ -83,7 +90,7 @@ const animeRoute: FastifyPluginAsync = async (fastify) => {
             description: 'Episode list',
             type: 'object',
             properties: {
-              success: { type: 'boolean', example: true },
+              success: { type: 'boolean' },
               episodes: {
                 type: 'array',
                 items: {
@@ -98,7 +105,8 @@ const animeRoute: FastifyPluginAsync = async (fastify) => {
               cached: { type: 'boolean' },
             },
           },
-          404: { $ref: '#/components/schemas/ErrorResponse' },
+          404: errorSchema,
+          400: errorSchema,
         },
       },
     },
@@ -107,15 +115,8 @@ const animeRoute: FastifyPluginAsync = async (fastify) => {
       if (!parsed.success) {
         throw new ValidationError(parsed.error.errors.map((e) => e.message).join(', '));
       }
-
       const { data: episodes, cached } = await aniwaveService.episodes(parsed.data.id);
-
-      return reply.send({
-        success: true,
-        episodes,
-        total: episodes.length,
-        cached,
-      });
+      return reply.send({ success: true, episodes, total: episodes.length, cached });
     },
   );
 };

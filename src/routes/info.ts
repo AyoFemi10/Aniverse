@@ -3,14 +3,18 @@ import { aniwaveService } from '../services/aniwave.service';
 import { AnimeParamsSchema } from '../schemas/anime.schema';
 import { ValidationError } from '../utils/errors';
 
+const errorSchema = {
+  type: 'object',
+  properties: {
+    success: { type: 'boolean' },
+    error: {
+      type: 'object',
+      properties: { code: { type: 'string' }, message: { type: 'string' } },
+    },
+  },
+} as const;
+
 const infoRoute: FastifyPluginAsync = async (fastify) => {
-  /**
-   * GET /api/v1/anime/:id/info
-   *
-   * A "super" endpoint that returns details + full episode list in one response.
-   * Useful for building an anime detail page without making two round trips.
-   * The underlying scrape is also a single HTTP fetch (one HTML page → two parsers).
-   */
   fastify.get(
     '/:id/info',
     {
@@ -18,18 +22,13 @@ const infoRoute: FastifyPluginAsync = async (fastify) => {
         tags: ['anime'],
         summary: 'Get full anime info (details + episodes)',
         description:
-          'Returns a combined response with all anime metadata AND the complete ' +
-          'episode list. Equivalent to calling `GET /anime/:id` and `GET /anime/:id/episodes` ' +
-          'simultaneously, but resolved in a single upstream fetch.',
+          'Combined response with all anime metadata AND the complete episode list. ' +
+          'Single upstream fetch — more efficient than calling /anime/:id and /anime/:id/episodes separately.',
         params: {
           type: 'object',
           required: ['id'],
           properties: {
-            id: {
-              type: 'string',
-              description: 'Anime slug (e.g. naruto-123)',
-              example: 'naruto-123',
-            },
+            id: { type: 'string', description: 'Anime slug (e.g. naruto-123)' },
           },
         },
         response: {
@@ -37,7 +36,7 @@ const infoRoute: FastifyPluginAsync = async (fastify) => {
             description: 'Full anime info',
             type: 'object',
             properties: {
-              success: { type: 'boolean', example: true },
+              success: { type: 'boolean' },
               info: {
                 type: 'object',
                 properties: {
@@ -66,7 +65,8 @@ const infoRoute: FastifyPluginAsync = async (fastify) => {
               cached: { type: 'boolean' },
             },
           },
-          404: { $ref: '#/components/schemas/ErrorResponse' },
+          400: errorSchema,
+          404: errorSchema,
         },
       },
     },
@@ -75,9 +75,7 @@ const infoRoute: FastifyPluginAsync = async (fastify) => {
       if (!parsed.success) {
         throw new ValidationError(parsed.error.errors.map((e) => e.message).join(', '));
       }
-
       const { data: info, cached } = await aniwaveService.info(parsed.data.id);
-
       return reply.send({ success: true, info, cached });
     },
   );

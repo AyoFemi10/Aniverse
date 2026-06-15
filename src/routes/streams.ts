@@ -5,7 +5,6 @@ import { EpisodeParamsSchema } from '../schemas/anime.schema';
 import { ValidationError, NotFoundError } from '../utils/errors';
 import { BRAND } from '../scrapers/aniwave.scraper';
 
-// Query param schema for stream type filtering
 const StreamQuerySchema = z.object({
   type: z
     .enum(['sub', 'dub', 'all'], {
@@ -14,6 +13,17 @@ const StreamQuerySchema = z.object({
     .default('all')
     .optional(),
 });
+
+const errorSchema = {
+  type: 'object',
+  properties: {
+    success: { type: 'boolean' },
+    error: {
+      type: 'object',
+      properties: { code: { type: 'string' }, message: { type: 'string' } },
+    },
+  },
+} as const;
 
 const streamRoute: FastifyPluginAsync = async (fastify) => {
   fastify.get(
@@ -30,13 +40,8 @@ const streamRoute: FastifyPluginAsync = async (fastify) => {
           type: 'object',
           required: ['id', 'episode'],
           properties: {
-            id: { type: 'string', description: 'Anime slug', example: 'naruto-123' },
-            episode: {
-              type: 'integer',
-              minimum: 1,
-              description: 'Episode number',
-              example: 1,
-            },
+            id: { type: 'string', description: 'Anime slug' },
+            episode: { type: 'integer', minimum: 1, description: 'Episode number' },
           },
         },
         querystring: {
@@ -46,7 +51,7 @@ const streamRoute: FastifyPluginAsync = async (fastify) => {
               type: 'string',
               enum: ['sub', 'dub', 'all'],
               default: 'all',
-              description: 'Filter streams by type. "sub" = subtitled, "dub" = dubbed, "all" = both.',
+              description: '"sub", "dub", or "all" (default)',
             },
           },
         },
@@ -55,8 +60,8 @@ const streamRoute: FastifyPluginAsync = async (fastify) => {
             description: 'Stream sources',
             type: 'object',
             properties: {
-              success: { type: 'boolean', example: true },
-              provider: { type: 'string', example: BRAND },
+              success: { type: 'boolean' },
+              provider: { type: 'string' },
               streams: {
                 type: 'array',
                 items: {
@@ -64,7 +69,7 @@ const streamRoute: FastifyPluginAsync = async (fastify) => {
                   properties: {
                     type: { type: 'string', enum: ['SUB', 'DUB'] },
                     url: { type: 'string' },
-                    provider: { type: 'string', example: BRAND },
+                    provider: { type: 'string' },
                     headers: {
                       type: 'object',
                       additionalProperties: { type: 'string' },
@@ -75,7 +80,8 @@ const streamRoute: FastifyPluginAsync = async (fastify) => {
               cached: { type: 'boolean' },
             },
           },
-          404: { $ref: '#/components/schemas/ErrorResponse' },
+          400: errorSchema,
+          404: errorSchema,
         },
       },
     },
@@ -89,12 +95,8 @@ const streamRoute: FastifyPluginAsync = async (fastify) => {
       const typeFilter = queryParsed.success ? (queryParsed.data.type ?? 'all') : 'all';
 
       const { id, episode } = paramsParsed.data;
-      const { data: allStreams, cached } = await aniwaveService.stream(
-        id,
-        String(episode),
-      );
+      const { data: allStreams, cached } = await aniwaveService.stream(id, String(episode));
 
-      // Apply type filter
       const streams =
         typeFilter === 'all'
           ? allStreams
@@ -108,12 +110,7 @@ const streamRoute: FastifyPluginAsync = async (fastify) => {
         throw new NotFoundError('STREAM_NOT_FOUND', detail);
       }
 
-      return reply.send({
-        success: true,
-        provider: BRAND,      // "AniVerse" top-level brand label
-        streams,
-        cached,
-      });
+      return reply.send({ success: true, provider: BRAND, streams, cached });
     },
   );
 };
