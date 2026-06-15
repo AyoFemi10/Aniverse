@@ -30,6 +30,7 @@ const swaggerPlugin: FastifyPluginAsync = async (fastify) => {
         { name: 'streams',   description: 'Stream URL resolution (SUB / DUB)' },
         { name: 'discovery', description: 'Trending, Recent & Popular' },
         { name: 'genres',    description: 'Genre list & genre browsing' },
+        { name: 'image',     description: 'Proxied image delivery' },
         { name: 'health',    description: 'Health & monitoring' },
       ],
       components: {

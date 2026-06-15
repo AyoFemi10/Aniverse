@@ -10,6 +10,7 @@ import * as cheerio from 'cheerio';
 import { fetchHtml, fetchJson } from '../utils/http';
 import { logger } from '../utils/logger';
 import { ScraperError, NotFoundError } from '../utils/errors';
+import { proxyImageUrl } from '../utils/image';
 import type { SearchResult, AnimeDetails, Episode, Stream, DiscoveryAnime, Genre, GenreAnime, AnimeInfo } from '../types';
 
 /** Upstream base – internal use only, never returned to clients */
@@ -70,7 +71,7 @@ export async function scrapeSearch(keyword: string): Promise<SearchResult[]> {
     results.push({
       id,
       title,
-      image,
+      image: proxyImageUrl(image),
       // Public URL points to AniVerse API, not upstream
       url: `/api/v1/anime/${id}`,
     });
@@ -159,7 +160,7 @@ export async function scrapeDetails(slug: string): Promise<AnimeDetails> {
     $('span.item-head:contains("Score")').next().text().trim() ||
     '';
 
-  return { title, description, aliases, aired, image, genres, status, rating };
+  return { title, description, aliases, aired, image: proxyImageUrl(image ?? ''), genres, status, rating };
 }
 
 // ─── Episodes ─────────────────────────────────────────────────────────────────
@@ -351,7 +352,7 @@ export async function scrapeDiscovery(page: 'trending' | 'recent' | 'popular'): 
     results.push({
       id,
       title,
-      image,
+      image: proxyImageUrl(image),
       url: `/api/v1/anime/${id}`,
       episodes: epMatch ? parseInt(epMatch[1], 10) : undefined,
     });
@@ -450,7 +451,7 @@ export async function scrapeGenreAnime(
     items.push({
       id,
       title,
-      image,
+      image: proxyImageUrl(image),
       url: `/api/v1/anime/${id}`,
       episodes: epMatch ? parseInt(epMatch[1], 10) : undefined,
       type: type || undefined,
@@ -581,7 +582,7 @@ export async function scrapeInfo(slug: string): Promise<AnimeInfo> {
     description,
     aliases,
     aired,
-    image: image ?? '',
+    image: proxyImageUrl(image ?? ''),
     genres,
     status,
     rating,
