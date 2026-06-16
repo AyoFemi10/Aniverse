@@ -21,8 +21,36 @@ const DEFAULT_TIMEOUT = Number(process.env.REQUEST_TIMEOUT_MS ?? 15_000);
 const MAX_RETRIES = 3;
 const BASE_BACKOFF_MS = 500;
 
+// Cloudflare Worker proxy URL — routes scraper requests through CF's network
+// to bypass VPS IP blocks on the upstream site.
+// Set SCRAPER_PROXY_WORKER=https://your-worker.workers.dev in .env
+const CF_WORKER = process.env.SCRAPER_PROXY_WORKER?.replace(/\/+$/, '') ?? null;
+
+/**
+ * If a CF Worker is configured, rewrite the target URL to go through it.
+ * Worker receives: GET https://worker.dev?url=https://aniwaves.ru/...
+ */
+function workerUrl(url: string): string {
+  if (!CF_WORKER) return url;
+  return `${CF_WORKER}?url=${encodeURIComponent(url)}`;
+}
+
+// Optional HTTP proxy (residential) as fallback
+const proxyConfig = process.env.SCRAPER_PROXY
+  ? (() => {
+      const u = new URL(process.env.SCRAPER_PROXY!);
+      return {
+        host: u.hostname,
+        port: parseInt(u.port, 10),
+        auth: u.username ? { username: u.username, password: u.password } : undefined,
+        protocol: u.protocol.replace(':', '') as 'http' | 'https',
+      };
+    })()
+  : undefined;
+
 const client = axios.create({
   timeout: DEFAULT_TIMEOUT,
+  proxy: proxyConfig,
   headers: {
     Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.9',
@@ -37,20 +65,18 @@ export async function fetchHtml(
   url: string,
   extraHeaders: Record<string, string> = {},
 ): Promise<string> {
-  return fetchWithRetry<string>(url, {
+  return fetchWithRetry<string>(workerUrl(url), {
     headers: { 'User-Agent': nextUserAgent(), ...extraHeaders },
     responseType: 'text',
   });
 }
 
-/**
- * Fetch JSON with retry.
- */
 export async function fetchJson<T = unknown>(
   url: string,
   extraHeaders: Record<string, string> = {},
 ): Promise<T> {
-  return fetchWithRetry<T>(url, {
+  // JSON endpoints (AJAX calls) use the worker too if configured
+  return fetchWithRetry<T>(workerUrl(url), {
     headers: {
       'User-Agent': nextUserAgent(),
       Accept: 'application/json, */*',
