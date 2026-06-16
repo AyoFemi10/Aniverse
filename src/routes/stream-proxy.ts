@@ -3,44 +3,69 @@
  *
  * GET /api/v1/stream-proxy?url=<base64url>&referer=<base64url>
  *
- * Fetches an M3U8 manifest or TS segment from the CDN server-side,
- * forwarding the required Referer header, then streams the bytes to the client.
+ * Fetches M3U8 manifests and TS segments from the CDN server-side,
+ * forwarding the required Referer header.
  *
- * This is required because browsers block direct cross-origin M3U8 requests
- * that need custom headers (Referer). By proxying through this endpoint the
- * browser only talks to apis.ayohost.site — the upstream CDN is never exposed.
+ * For M3U8 manifests, rewrites all relative URIs to absolute proxy URLs
+ * so HLS.js can follow the playlist chain correctly through this proxy.
  *
- * Usage:
- *   1. Encode the stream url:     Buffer.from(url).toString('base64url')
- *   2. Encode the referer:        Buffer.from(referer).toString('base64url')
- *   3. Point HLS.js at:           /api/v1/stream-proxy?url=<enc>&referer=<enc>
- *
- * HLS.js xhrSetup example:
- *   xhrSetup(xhr, url) {
- *     xhr.open('GET', `/api/v1/stream-proxy?url=${btoa(url)}&referer=${btoa(referer)}`);
- *   }
+ * For TS segments (binary), streams bytes directly to the client.
  */
 
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import axios from 'axios';
 import { logger } from '../utils/logger';
 
-// Allowed CDN hostnames for stream proxying
-const ALLOWED_STREAM_HOSTS = new Set([
+const ALLOWED_CDN_BASES = [
   'aniwaves.ru',
-  'play.echovideo.ru',
   'echovideo.ru',
-]);
+  'burntburst45.store',
+];
 
 function isAllowedStreamHost(url: string): boolean {
   try {
     const { hostname } = new URL(url);
-    return [...ALLOWED_STREAM_HOSTS].some(
-      (h) => hostname === h || hostname.endsWith(`.${h}`),
+    return ALLOWED_CDN_BASES.some(
+      (base) => hostname === base || hostname.endsWith(`.${base}`),
     );
   } catch {
     return false;
   }
+}
+
+function encodeB64url(str: string): string {
+  return Buffer.from(str).toString('base64url');
+}
+
+/**
+ * Rewrite a M3U8 manifest so every URI line (relative or absolute)
+ * is replaced with a proxy URL pointing back through this endpoint.
+ */
+function rewriteM3u8(body: string, baseUrl: string, referer: string): string {
+  const base = new URL(baseUrl);
+  const lines = body.split('\n');
+
+  return lines
+    .map((line) => {
+      const trimmed = line.trim();
+
+      // Skip comments, tags, empty lines
+      if (!trimmed || trimmed.startsWith('#')) return line;
+
+      // Resolve relative URL against the manifest's base URL
+      let absoluteUrl: string;
+      try {
+        absoluteUrl = new URL(trimmed, base).toString();
+      } catch {
+        return line; // can't parse — leave as-is
+      }
+
+      // Wrap in the stream proxy
+      const encUrl = encodeB64url(absoluteUrl);
+      const encRef = encodeB64url(referer);
+      return `/api/v1/stream-proxy?url=${encUrl}&referer=${encRef}`;
+    })
+    .join('\n');
 }
 
 const errorSchema = {
@@ -52,7 +77,7 @@ const errorSchema = {
 } as const;
 
 const streamProxyRoute: FastifyPluginAsync = async (fastify) => {
-  // Handle CORS preflight
+  // CORS preflight
   fastify.options('/stream-proxy', async (_req, reply) => {
     return reply
       .header('Access-Control-Allow-Origin', '*')
@@ -67,22 +92,22 @@ const streamProxyRoute: FastifyPluginAsync = async (fastify) => {
     {
       schema: {
         tags: ['streams'],
-        summary: 'M3U8 / HLS stream proxy',
+        summary: 'HLS stream proxy (M3U8 + segments)',
         description:
-          'Proxies an M3U8 manifest or TS segment through the server, forwarding ' +
-          'the required Referer header. Use this when playing streams in a browser ' +
-          'to avoid CORS/Referer blocking. ' +
-          'Both `url` and `referer` params are base64url-encoded.',
+          'Proxies M3U8 manifests and TS segments through the server. ' +
+          'Rewrites relative M3U8 URIs to absolute proxy paths so HLS.js ' +
+          'can follow the full playlist chain. ' +
+          '`url` and `referer` are base64url-encoded.',
         querystring: {
           type: 'object',
           required: ['url'],
           properties: {
-            url: { type: 'string', description: 'base64url-encoded stream URL (M3U8 or TS segment)' },
-            referer: { type: 'string', description: 'base64url-encoded Referer value (optional)' },
+            url:     { type: 'string', description: 'base64url-encoded stream URL' },
+            referer: { type: 'string', description: 'base64url-encoded Referer (optional)' },
           },
         },
         response: {
-          200: { description: 'Stream bytes', type: 'string' },
+          200: { description: 'Stream bytes or rewritten M3U8', type: 'string' },
           400: errorSchema,
           403: errorSchema,
           502: errorSchema,
@@ -102,11 +127,10 @@ const streamProxyRoute: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // Decode stream URL
       let streamUrl: string;
       try {
         streamUrl = Buffer.from(encodedUrl, 'base64url').toString('utf8');
-        new URL(streamUrl); // validate
+        new URL(streamUrl);
       } catch {
         return reply.status(400).send({
           success: false,
@@ -114,7 +138,6 @@ const streamProxyRoute: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // Enforce allowlist
       if (!isAllowedStreamHost(streamUrl)) {
         logger.warn({ streamUrl }, 'Stream proxy: host not allowed');
         return reply.status(403).send({
@@ -123,7 +146,6 @@ const streamProxyRoute: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // Decode referer
       let referer = 'https://aniwaves.ru';
       if (encodedReferer) {
         try {
@@ -131,33 +153,60 @@ const streamProxyRoute: FastifyPluginAsync = async (fastify) => {
         } catch { /* use default */ }
       }
 
+      const isM3u8 = streamUrl.includes('.m3u8') ||
+        streamUrl.includes('master') ||
+        streamUrl.includes('index');
+
       try {
-        const upstream = await axios.get<import('stream').Readable>(streamUrl, {
-          responseType: 'stream',
-          timeout: 20_000,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-            Referer: referer,
-            Origin: new URL(referer).origin,
-            Accept: '*/*',
-          },
-          maxRedirects: 5,
-        });
+        if (isM3u8) {
+          // Fetch as text so we can rewrite relative URIs
+          const upstream = await axios.get<string>(streamUrl, {
+            responseType: 'text',
+            timeout: 20_000,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+              Referer: referer,
+              Origin: new URL(referer).origin,
+              Accept: '*/*',
+            },
+            maxRedirects: 5,
+          });
 
-        const contentType = String(upstream.headers['content-type'] ?? 'application/vnd.apple.mpegurl');
+          const rewritten = rewriteM3u8(upstream.data, streamUrl, referer);
 
-        reply
-          .header('Content-Type', contentType)
-          .header('Access-Control-Allow-Origin', '*')
-          .header('Access-Control-Allow-Headers', '*')
-          .header('Access-Control-Allow-Methods', 'GET, OPTIONS')
-          .header('Cross-Origin-Resource-Policy', 'cross-origin')
-          .header('Cache-Control', 'no-cache');
+          return reply
+            .header('Content-Type', 'application/vnd.apple.mpegurl')
+            .header('Access-Control-Allow-Origin', '*')
+            .header('Cross-Origin-Resource-Policy', 'cross-origin')
+            .header('Cache-Control', 'no-cache, no-store')
+            .send(rewritten);
+        } else {
+          // Binary segment — stream directly
+          const upstream = await axios.get<import('stream').Readable>(streamUrl, {
+            responseType: 'stream',
+            timeout: 30_000,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+              Referer: referer,
+              Origin: new URL(referer).origin,
+              Accept: '*/*',
+            },
+            maxRedirects: 5,
+          });
 
-        const contentLength = upstream.headers['content-length'];
-        if (contentLength) reply.header('Content-Length', String(contentLength));
+          const contentType = String(upstream.headers['content-type'] ?? 'video/mp2t');
+          const contentLength = upstream.headers['content-length'];
 
-        return reply.send(upstream.data);
+          reply
+            .header('Content-Type', contentType)
+            .header('Access-Control-Allow-Origin', '*')
+            .header('Cross-Origin-Resource-Policy', 'cross-origin')
+            .header('Cache-Control', 'public, max-age=3600');
+
+          if (contentLength) reply.header('Content-Length', String(contentLength));
+
+          return reply.send(upstream.data);
+        }
       } catch (err) {
         logger.error({ err, streamUrl }, 'Stream proxy: upstream fetch failed');
         return reply.status(502).send({
