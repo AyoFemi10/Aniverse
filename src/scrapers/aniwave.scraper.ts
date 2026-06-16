@@ -99,7 +99,7 @@ export async function scrapeDetails(slug: string): Promise<AnimeDetails> {
   const title =
     $('h2.film-name').text().trim() ||
     $('h1.film-name').text().trim() ||
-    $('title').text().replace(/[-|].*$/, '').trim();
+    (() => { const t = $('title').text().trim(); if (t.includes(' | ')) return t.split(' | ').slice(1).join(' | ').trim(); if (t.includes(' - ')) return t.split(' - ')[0].trim(); return t.replace(/^aniwave\s*/i, '').trim(); })();
 
   if (!title) {
     throw new NotFoundError('ANIME_NOT_FOUND', `Anime not found: ${slug}`);
@@ -679,7 +679,7 @@ export async function scrapeInfo(slug: string): Promise<AnimeInfo> {
   const title =
     $('h2.film-name').text().trim() ||
     $('h1.film-name').text().trim() ||
-    $('title').text().replace(/[-|].*$/, '').trim();
+    (() => { const t = $('title').text().trim(); if (t.includes(' | ')) return t.split(' | ').slice(1).join(' | ').trim(); if (t.includes(' - ')) return t.split(' - ')[0].trim(); return t.replace(/^aniwave\s*/i, '').trim(); })();
 
   if (!title) {
     throw new NotFoundError('ANIME_NOT_FOUND', `Anime not found: ${slug}`);
