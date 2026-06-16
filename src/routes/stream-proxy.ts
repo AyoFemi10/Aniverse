@@ -146,10 +146,14 @@ const streamProxyRoute: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      let referer = 'https://aniwaves.ru';
+      let referer = 'https://aniwaves.ru';  // CDN requires this — never exposed to clients
       if (encodedReferer) {
         try {
-          referer = Buffer.from(encodedReferer, 'base64url').toString('utf8');
+          const decoded = Buffer.from(encodedReferer, 'base64url').toString('utf8');
+          // Only use decoded referer if it's a known CDN origin, otherwise use default
+          if (decoded.includes('aniwaves') || decoded.includes('burntburst') || decoded.includes('echovideo')) {
+            referer = decoded;
+          }
         } catch { /* use default */ }
       }
 
@@ -165,8 +169,8 @@ const streamProxyRoute: FastifyPluginAsync = async (fastify) => {
             timeout: 20_000,
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-              Referer: referer,
-              Origin: 'https://apis.ayohost.site',
+              Referer: 'https://aniwaves.ru',
+              Origin: 'https://aniwaves.ru',
               Accept: '*/*',
             },
             maxRedirects: 5,
@@ -187,8 +191,8 @@ const streamProxyRoute: FastifyPluginAsync = async (fastify) => {
             timeout: 30_000,
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-              Referer: referer,
-              Origin: 'https://apis.ayohost.site',
+              Referer: 'https://aniwaves.ru',
+              Origin: 'https://aniwaves.ru',
               Accept: '*/*',
             },
             maxRedirects: 5,
