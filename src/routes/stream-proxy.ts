@@ -78,8 +78,6 @@ const streamProxyRoute: FastifyPluginAsync = async (fastify) => {
           502: errorSchema,
         },
       },
-      // Stream proxying — disable Fastify response validation so binary data passes through
-      config: { rawBody: true },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { url: encodedUrl, referer: encodedReferer } = request.query as {
