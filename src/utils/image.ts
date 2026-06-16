@@ -24,7 +24,7 @@ export function proxyImageUrl(rawUrl: string): string {
   // Already proxied — don't double-encode
   if (rawUrl.includes('/proxy/')) return rawUrl;
   const token = Buffer.from(rawUrl).toString('base64url');
-  return `${publicBase()}/proxy/${token}`;
+  return `${publicBase()}/api/v1/proxy/${token}`;
 }
 
 /** Decode the path token back to the original upstream URL */

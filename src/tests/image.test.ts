@@ -51,7 +51,7 @@ describe('proxyImageUrl / decodeProxyUrl', () => {
   it('encodes an upstream URL into a /proxy/ path', () => {
     const raw = 'https://cdn.aniwaves.ru/images/naruto.jpg';
     const proxied = proxyImageUrl(raw);
-    expect(proxied).toMatch(/\/proxy\//);
+    expect(proxied).toMatch(/\/api\/v1\/proxy\//);
     // Must not contain the upstream domain
     expect(proxied).not.toContain('aniwaves.ru');
   });
@@ -96,7 +96,7 @@ describe('isAllowedImageHost', () => {
 
 describe('GET /proxy/:token', () => {
   it('returns 400 for a clearly invalid token', async () => {
-    const res = await app.inject({ method: 'GET', url: '/proxy/!!!' });
+    const res = await app.inject({ method: 'GET', url: '/api/v1/proxy/!!!' });
     expect(res.statusCode).toBe(400);
     expect(JSON.parse(res.body).error.code).toBe('INVALID_PARAMS');
   });
