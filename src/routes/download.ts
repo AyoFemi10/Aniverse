@@ -1,15 +1,18 @@
 /**
  * Download endpoint
  *
- * GET /api/v1/anime/:id/episodes/:episode/download?type=sub|dub
- *
- * Uses ffmpeg to mux the HLS stream into an MP4 and streams it
- * directly to the client as a download. The upstream CDN domain
- * is never exposed — ffmpeg runs server-side.
+ * GET /api/v1/anime/:id/episodes/:episode/download
  *
  * Query params:
- *   type    sub | dub (default: sub)
- *   quality optional label shown in filename (e.g. "720p")
+ *   type        sub | dub (default: sub)
+ *   quality     label for filename, e.g. "720p"
+ *   title       anime title for filename
+ *   variantUrl  base64url-encoded URL of a specific quality variant playlist
+ *               (from the /qualities endpoint). If omitted, uses the master M3U8
+ *               which lets ffmpeg pick the best available quality.
+ *
+ * Uses ffmpeg server-side to mux HLS → MP4 and streams it as a download.
+ * The upstream CDN domain is never exposed to the client.
  */
 
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
@@ -25,7 +28,6 @@ const errorSchema = {
   },
 } as const;
 
-/** Sanitise a string for use as a filename */
 function safeFilename(name: string): string {
   return name.replace(/[^a-z0-9 _\-().]/gi, '').trim().replace(/\s+/g, '_') || 'episode';
 }
@@ -38,22 +40,24 @@ const downloadRoute: FastifyPluginAsync = async (fastify) => {
         tags: ['streams'],
         summary: 'Download episode as MP4',
         description:
-          'Streams the episode through ffmpeg server-side and delivers it as an MP4 download. ' +
-          'No upstream domain is exposed. Uses the same stream resolution as the `/streams` endpoint.',
+          'Streams the episode through ffmpeg and delivers it as an MP4 download. ' +
+          'Pass `variantUrl` (from the `/qualities` endpoint) to download a specific quality. ' +
+          'Without `variantUrl`, downloads the default quality.',
         params: {
           type: 'object',
           required: ['id', 'episode'],
           properties: {
-            id:      { type: 'string', description: 'Anime slug' },
-            episode: { type: 'integer', minimum: 1, description: 'Episode number' },
+            id:      { type: 'string' },
+            episode: { type: 'integer', minimum: 1 },
           },
         },
         querystring: {
           type: 'object',
           properties: {
-            type:    { type: 'string', enum: ['sub', 'dub'], default: 'sub' },
-            quality: { type: 'string', description: 'Label for filename, e.g. 720p' },
-            title:   { type: 'string', description: 'Anime title for filename' },
+            type:       { type: 'string', enum: ['sub', 'dub'], default: 'sub' },
+            quality:    { type: 'string', description: 'Quality label for filename, e.g. 720p' },
+            title:      { type: 'string', description: 'Anime title for filename' },
+            variantUrl: { type: 'string', description: 'base64url-encoded variant playlist URL from /qualities' },
           },
         },
         response: {
@@ -65,75 +69,83 @@ const downloadRoute: FastifyPluginAsync = async (fastify) => {
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { id, episode } = request.params as { id: string; episode: number };
-      const { type = 'sub', quality = '', title = '' } = request.query as {
-        type?: string; quality?: string; title?: string;
-      };
+      const {
+        type = 'sub',
+        quality = '',
+        title = '',
+        variantUrl: encodedVariantUrl,
+      } = request.query as { type?: string; quality?: string; title?: string; variantUrl?: string };
 
-      // Resolve streams
-      const { data: streams } = await aniwaveService.stream(id, String(episode));
-      const stream = streams.find(s => s.type.toLowerCase() === type.toLowerCase())
-        ?? streams[0];
+      let m3u8Url: string;
 
-      if (!stream) {
-        return reply.status(404).send({
-          success: false,
-          error: { code: 'STREAM_NOT_FOUND', message: `No ${type.toUpperCase()} stream for ${id} episode ${episode}` },
-        });
+      if (encodedVariantUrl) {
+        // Use the specific quality variant URL provided by the /qualities endpoint
+        try {
+          m3u8Url = Buffer.from(encodedVariantUrl, 'base64url').toString('utf8');
+          new URL(m3u8Url); // validate
+        } catch {
+          return reply.status(400).send({
+            success: false,
+            error: { code: 'INVALID_PARAMS', message: 'Invalid variantUrl' },
+          });
+        }
+      } else {
+        // Fall back to the master M3U8 — ffmpeg will pick best quality
+        const { data: streams } = await aniwaveService.stream(id, String(episode));
+        const stream = streams.find(s => s.type.toLowerCase() === type.toLowerCase()) ?? streams[0];
+        if (!stream) {
+          return reply.status(404).send({
+            success: false,
+            error: { code: 'STREAM_NOT_FOUND', message: `No ${type.toUpperCase()} stream for ${id} episode ${episode}` },
+          });
+        }
+        m3u8Url = stream.url;
       }
 
-      // Build filename:  Naruto_Episode_1_Sub_720p.mp4
+      // Build filename: Naruto_Episode_1_SUB_720p.mp4
       const animeName  = safeFilename(title || id.replace(/-\d+$/, '').replace(/-/g, ' '));
       const typeLabel  = type.toUpperCase();
       const qualLabel  = quality ? `_${quality}` : '';
       const filename   = `${animeName}_Episode_${episode}_${typeLabel}${qualLabel}.mp4`;
 
-      logger.info({ id, episode, type, url: stream.url }, 'Download started');
+      logger.info({ id, episode, type, quality, m3u8Url }, 'Download started');
 
-      // Set response headers before spawning ffmpeg
       reply.raw.setHeader('Content-Type', 'video/mp4');
       reply.raw.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       reply.raw.setHeader('X-Powered-By', 'AniVerse');
       reply.raw.setHeader('Transfer-Encoding', 'chunked');
 
-      // ffmpeg: read HLS, remux to MP4, write to stdout
+      // ffmpeg: read HLS with required headers, remux to streamable MP4
       const ffmpeg = spawn('ffmpeg', [
-        '-headers',    `Referer: https://aniwaves.ru\r\nOrigin: https://aniwaves.ru\r\n`,
-        '-i',          stream.url,
-        '-c',          'copy',          // no re-encode — just remux, fast
-        '-movflags',   'frag_keyframe+empty_moov+faststart',  // streamable MP4
-        '-f',          'mp4',
-        'pipe:1',                       // output to stdout
+        '-headers',  'Referer: https://aniwaves.ru\r\nOrigin: https://aniwaves.ru\r\n',
+        '-i',        m3u8Url,
+        '-c',        'copy',
+        '-movflags', 'frag_keyframe+empty_moov+faststart',
+        '-f',        'mp4',
+        'pipe:1',
       ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
-      // Pipe ffmpeg stdout → HTTP response
       ffmpeg.stdout.pipe(reply.raw);
 
       ffmpeg.stderr.on('data', (chunk: Buffer) => {
-        // ffmpeg progress goes to stderr — log at debug level only
-        logger.debug({ msg: chunk.toString() }, 'ffmpeg stderr');
+        logger.debug({ msg: chunk.toString().slice(0, 200) }, 'ffmpeg');
       });
 
       ffmpeg.on('error', (err) => {
         logger.error({ err }, 'ffmpeg spawn error');
-        if (!reply.raw.headersSent) {
-          reply.raw.writeHead(502);
-        }
+        if (!reply.raw.headersSent) reply.raw.writeHead(502);
         reply.raw.end();
       });
 
       ffmpeg.on('close', (code) => {
         logger.info({ id, episode, code }, 'Download complete');
-        if (code !== 0 && !reply.raw.writableEnded) {
-          reply.raw.end();
-        }
+        if (!reply.raw.writableEnded) reply.raw.end();
       });
 
-      // If the client disconnects, kill ffmpeg
       request.raw.on('close', () => {
         if (!ffmpeg.killed) ffmpeg.kill('SIGTERM');
       });
 
-      // Return a hijacked reply — Fastify must not touch the response after this
       return reply;
     },
   );
