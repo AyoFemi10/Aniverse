@@ -96,11 +96,11 @@ export async function scrapeDetails(slug: string): Promise<AnimeDetails> {
   const $ = cheerio.load(html);
 
   // Title
-  const title =
-    $('h2.film-name').text().trim() ||
-    $('h1.film-name').text().trim() ||
-    (() => { const t = $('title').text().trim(); const m = t.match(/^[^-]+-\s*(.+?)\s*(?:\(\d{4}\))?\s*[�-]?\s*(?:Watch|Stream|Online)?.*$/i); return m ? m[1].trim() : t.replace(/^aniwave\s*[-�]\s*/i, '').split(/\s*[-�]\s*(?:Watch|Stream)/i)[0].trim(); })();
-
+  // Title � extract from <title> tag first (most reliable), then fall back to DOM
+  const rawPageTitle = $('title').text().trim();
+  const titleFromTag = rawPageTitle.includes(' - ') ? rawPageTitle.split(' - ').slice(1).join(' - ').split(/\s*[��]\s*(?:Watch|Stream|Online)/i)[0].trim() : '';
+  const title = (titleFromTag && !titleFromTag.toLowerCase().startsWith('aniwave')) ? titleFromTag :
+    $('h2.film-name, h1.film-name, .film-name').filter((_,el) => !$(el).text().trim().toLowerCase().includes('aniwave')).first().text().trim() || titleFromTag;
   if (!title) {
     throw new NotFoundError('ANIME_NOT_FOUND', `Anime not found: ${slug}`);
   }
@@ -676,11 +676,11 @@ export async function scrapeInfo(slug: string): Promise<AnimeInfo> {
   const $ = cheerio.load(html);
 
   // ── Title ──────────────────────────────────────────────────────────────────
-  const title =
-    $('h2.film-name').text().trim() ||
-    $('h1.film-name').text().trim() ||
-    (() => { const t = $('title').text().trim(); const m = t.match(/^[^-]+-\s*(.+?)\s*(?:\(\d{4}\))?\s*[�-]?\s*(?:Watch|Stream|Online)?.*$/i); return m ? m[1].trim() : t.replace(/^aniwave\s*[-�]\s*/i, '').split(/\s*[-�]\s*(?:Watch|Stream)/i)[0].trim(); })();
-
+  // Title � same logic as scrapeDetails
+  const rawPageTitle2 = $('title').text().trim();
+  const titleFromTag2 = rawPageTitle2.includes(' - ') ? rawPageTitle2.split(' - ').slice(1).join(' - ').split(/\s*[��]\s*(?:Watch|Stream|Online)/i)[0].trim() : '';
+  const title = (titleFromTag2 && !titleFromTag2.toLowerCase().startsWith('aniwave')) ? titleFromTag2 :
+    $('h2.film-name, h1.film-name, .film-name').filter((_,el) => !$(el).text().trim().toLowerCase().includes('aniwave')).first().text().trim() || titleFromTag2;
   if (!title) {
     throw new NotFoundError('ANIME_NOT_FOUND', `Anime not found: ${slug}`);
   }
