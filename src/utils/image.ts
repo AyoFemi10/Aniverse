@@ -13,20 +13,20 @@ function publicBase(): string {
 
 /**
  * Returns the image URL for use in API responses.
- * Currently returns the raw upstream URL directly so browsers can load
- * images without going through the proxy.
+ * Images are proxied through /api/v1/proxy/:token so the browser
+ * only talks to apis.ayohost.site — avoiding CDN CORS blocks.
  */
 export function proxyImageUrl(rawUrl: string): string {
-  // Return the raw CDN URL — no proxy encoding
-  return rawUrl ?? '';
-}
-
-/** Encode a raw upstream image URL into an AniVerse proxy URL (opt-in) */
-export function encodeProxyUrl(rawUrl: string): string {
   if (!rawUrl) return '';
+  // Already proxied — don't double-encode
   if (rawUrl.includes('/api/v1/proxy/')) return rawUrl;
   const token = Buffer.from(rawUrl).toString('base64url');
   return `${publicBase()}/api/v1/proxy/${token}`;
+}
+
+/** Encode a raw upstream image URL into an AniVerse proxy URL (alias) */
+export function encodeProxyUrl(rawUrl: string): string {
+  return proxyImageUrl(rawUrl);
 }
 
 /** Decode a proxy token back to the original upstream URL */

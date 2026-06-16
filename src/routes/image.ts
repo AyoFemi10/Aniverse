@@ -116,6 +116,8 @@ const imageRoute: FastifyPluginAsync = async (fastify) => {
 
         reply
           .header('Content-Type', contentType)
+          .header('Access-Control-Allow-Origin', '*')
+          .header('Cross-Origin-Resource-Policy', 'cross-origin')
           .header('Cache-Control', `public, max-age=${IMAGE_CACHE_SECONDS}, immutable`)
           .header('X-Powered-By', 'AniVerse')
           .header('Vary', 'Accept');
