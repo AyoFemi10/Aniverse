@@ -2,7 +2,6 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
-import fp from 'fastify-plugin';
 
 import redisPlugin from './plugins/redis';
 import swaggerPlugin from './plugins/swagger';
@@ -13,7 +12,7 @@ import healthRoute from './routes/health';
 import searchRoute from './routes/search';
 import animeRoute from './routes/anime';
 import streamRoute from './routes/streams';
-import discoveryRoute from './routes/discovery';
+import homeRoute from './routes/home';
 import genreRoute from './routes/genres';
 import infoRoute from './routes/info';
 import imageRoute from './routes/image';
@@ -108,13 +107,13 @@ export async function buildApp(): Promise<FastifyInstance> {
   const API_PREFIX = '/api/v1';
 
   await fastify.register(healthRoute);
-  await fastify.register(searchRoute, { prefix: API_PREFIX });
-  await fastify.register(animeRoute, { prefix: `${API_PREFIX}/anime` });
-  await fastify.register(streamRoute, { prefix: `${API_PREFIX}/anime` });
-  await fastify.register(infoRoute, { prefix: `${API_PREFIX}/anime` });
-  await fastify.register(discoveryRoute, { prefix: API_PREFIX });
-  await fastify.register(genreRoute, { prefix: API_PREFIX });
-  await fastify.register(imageRoute, { prefix: '/proxy' });     // GET /proxy/:token
+  await fastify.register(searchRoute,  { prefix: API_PREFIX });
+  await fastify.register(animeRoute,   { prefix: `${API_PREFIX}/anime` });
+  await fastify.register(streamRoute,  { prefix: `${API_PREFIX}/anime` });
+  await fastify.register(infoRoute,    { prefix: `${API_PREFIX}/anime` });
+  await fastify.register(homeRoute,    { prefix: API_PREFIX });   // all discovery + home endpoints
+  await fastify.register(genreRoute,   { prefix: API_PREFIX });
+  await fastify.register(imageRoute,   { prefix: API_PREFIX });   // GET /api/v1/image?url=...
 
   return fastify;
 }

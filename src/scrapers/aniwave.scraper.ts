@@ -314,59 +314,247 @@ export async function scrapeStreams(slug: string, episode: string): Promise<Stre
 
 // ─── Discovery (Trending / Recent / Popular) ──────────────────────────────────
 
-export async function scrapeDiscovery(page: 'trending' | 'recent' | 'popular'): Promise<DiscoveryAnime[]> {
-  const urlMap: Record<string, string> = {
-    trending: `${_UPSTREAM}/trending`,
-    recent: `${_UPSTREAM}/recently-updated`,
-    popular: `${_UPSTREAM}/most-popular`,
-  };
+// ─── Discovery (REPLACEMENT — replaces old scrapeDiscovery) ──────────────────
 
-  const url = urlMap[page] ?? _UPSTREAM;
+const DISCOVERY_URLS: Record<string, string[]> = {
+  trending:  [`${_UPSTREAM}/home`, `${_UPSTREAM}/trending`, `${_UPSTREAM}/top-airing`],
+  recent:    [`${_UPSTREAM}/recently-updated`, `${_UPSTREAM}/home`, `${_UPSTREAM}/latest`],
+  popular:   [`${_UPSTREAM}/most-popular`, `${_UPSTREAM}/home`, `${_UPSTREAM}/popular`],
+  newest:    [`${_UPSTREAM}/newest`],
+  added:     [`${_UPSTREAM}/added`],
+  completed: [`${_UPSTREAM}/completed`],
+};
 
-  let html: string;
-  try {
-    html = await fetchHtml(url);
-  } catch (err) {
-    logger.error({ err }, `scrapeDiscovery(${page}): network error`);
-    throw new ScraperError(`Failed to fetch ${page} list`);
+export async function scrapeDiscovery(
+  page: 'trending' | 'recent' | 'popular' | 'newest' | 'added' | 'completed',
+  pageNum = 1,
+): Promise<DiscoveryAnime[]> {
+  const candidates = DISCOVERY_URLS[page] ?? [`${_UPSTREAM}/home`];
+  let html = '';
+  for (const baseUrl of candidates) {
+    const url = pageNum > 1 ? `${baseUrl}?page=${pageNum}` : baseUrl;
+    try {
+      const fetched = await fetchHtml(url);
+      if (fetched.includes('/watch/')) { html = fetched; break; }
+    } catch { /* try next */ }
   }
+  if (!html) { logger.warn({ page }, `scrapeDiscovery(${page}): all candidates failed`); return []; }
+  const $ = cheerio.load(html);
+  const results: DiscoveryAnime[] = [];
+  const seen = new Set<string>();
+  $('div.item, .flw-item, .film_list-wrap .item').each((_, el) => {
+    const anchor     = $(el).find('a').first();
+    const nameAnchor = $(el).find('a.name.d-title, a.d-title, .film-name').first();
+    const img        = $(el).find('img').first();
+    const epText     = $(el).find('[class*="ep"], .fd-infor span').text().trim();
+    const href  = anchor.attr('href') ?? '';
+    const title = (nameAnchor.text() || $(el).find('.d-title').text()).trim();
+    const image = img.attr('src') ?? img.attr('data-src') ?? '';
+    if (!href || !title || !href.includes('/watch/')) return;
+    const id = hrefToId(href);
+    if (seen.has(id)) return;
+    seen.add(id);
+    const epMatch = epText.match(/(\d+)/);
+    results.push({ id, title, image: proxyImageUrl(image), url: `/api/v1/anime/${id}`, episodes: epMatch ? parseInt(epMatch[1], 10) : undefined });
+  });
+  return results;
+}
+
+// ─── Latest Episodes (home page tab: all/sub/dub/chinese/trending/random) ─────
+//
+// AniWave's home page loads the "Latest Episode" section via AJAX.
+// The endpoint is /ajax/home/widget/latest-episode?page=1
+// with an optional type= param: sub | dub | chinese | trending | random
+// Falls back to scraping the home page directly if the AJAX call fails.
+
+interface LatestEpAjax { status: boolean; html: string; }
+
+export async function scrapeLatestEpisodes(
+  filter: 'all' | 'sub' | 'dub' | 'chinese' | 'trending' | 'random' = 'all',
+): Promise<DiscoveryAnime[]> {
+  // Try AJAX endpoint first (what the site actually uses for the tab filter)
+  const typeParam = filter === 'all' ? '' : `&type=${filter}`;
+  const ajaxUrl = `${_UPSTREAM}/ajax/home/widget/latest-episode?page=1${typeParam}`;
+
+  let html = '';
+  try {
+    const json = await fetchJson<LatestEpAjax>(ajaxUrl, { Referer: `${_UPSTREAM}/home` });
+    if (json?.html) html = json.html;
+  } catch { /* fall through to page scrape */ }
+
+  // Fallback: scrape /home directly and use the first card section
+  if (!html) {
+    try {
+      const pageHtml = await fetchHtml(`${_UPSTREAM}/home`);
+      if (pageHtml.includes('/watch/')) html = pageHtml;
+    } catch { /* give up */ }
+  }
+
+  if (!html) return [];
 
   const $ = cheerio.load(html);
   const results: DiscoveryAnime[] = [];
+  const seen = new Set<string>();
 
-  $('div.item, .flw-item, .film_list-wrap .item').each((_, el) => {
-    const anchor = $(el).find('a').first();
-    const nameAnchor = $(el).find('a.name.d-title, a.d-title, .film-name').first();
-    const img = $(el).find('img').first();
-    const epText = $(el).find('[class*="ep"], .fd-infor span').text().trim();
-
-    const href = anchor.attr('href') ?? '';
+  $('div.item, .flw-item, .item').each((_, el) => {
+    const anchor     = $(el).find('a').first();
+    const nameAnchor = $(el).find('a.name.d-title, a.d-title').first();
+    const img        = $(el).find('img').first();
+    const epBadge    = $(el).find('[class*="ep"], .tick-eps, .fdi-item').first().text().trim();
+    const typeBadge  = $(el).find('[class*="type"], .tick-dub, .tick-sub').first().text().trim();
+    const href  = anchor.attr('href') ?? '';
     const title = (nameAnchor.text() || $(el).find('.d-title').text()).trim();
     const image = img.attr('src') ?? img.attr('data-src') ?? '';
-
-    if (!href || !title) return;
-
+    if (!href || !title || !href.includes('/watch/')) return;
     const id = hrefToId(href);
-    const epMatch = epText.match(/(\d+)/);
-
-    results.push({
-      id,
-      title,
-      image: proxyImageUrl(image),
-      url: `/api/v1/anime/${id}`,
-      episodes: epMatch ? parseInt(epMatch[1], 10) : undefined,
-    });
+    if (seen.has(id)) return;
+    seen.add(id);
+    const epMatch = epBadge.match(/(\d+)/);
+    results.push({ id, title, image: proxyImageUrl(image), url: `/api/v1/anime/${id}`, episodes: epMatch ? parseInt(epMatch[1], 10) : undefined, type: typeBadge || undefined });
   });
 
   return results;
 }
 
-// ─── Genres ───────────────────────────────────────────────────────────────────
+// ─── Top Anime (day / week / month) ──────────────────────────────────────────
+// Scraped from /home — "Top Airing", "Most Popular", "Top Upcoming" sections.
+// Each section has a tab for day/week/month powered by an AJAX widget.
 
-/**
- * Scrape the full list of genres from AniWave's filter/genre navigation.
- * The genre list is scraped from the site's genre sidebar or nav section.
- */
+interface TopAjax { status: boolean; html: string; }
+
+export async function scrapeTopAnime(period: 'day' | 'week' | 'month' = 'week'): Promise<TopAnime[]> {
+  // Try the AJAX widget endpoint
+  const ajaxUrl = `${_UPSTREAM}/ajax/home/widget/top-airing?type=${period}`;
+  let html = '';
+  try {
+    const json = await fetchJson<TopAjax>(ajaxUrl, { Referer: `${_UPSTREAM}/home` });
+    if (json?.html) html = json.html;
+  } catch { /* fall through */ }
+
+  // Fallback: parse home page
+  if (!html) {
+    try {
+      const pageHtml = await fetchHtml(`${_UPSTREAM}/home`);
+      if (pageHtml.includes('/watch/')) html = pageHtml;
+    } catch { return []; }
+  }
+
+  const $ = cheerio.load(html);
+  const results: TopAnime[] = [];
+  const seen = new Set<string>();
+
+  // Top anime are typically in an ordered list with rank numbers
+  $('div.item, .flw-item, .top-item, li[class*="item"]').each((_, el) => {
+    const anchor     = $(el).find('a').first();
+    const nameAnchor = $(el).find('a.d-title, .film-name, h3, .name').first();
+    const img        = $(el).find('img').first();
+    const rankEl     = $(el).find('[class*="rank"], .number, span.num').first().text().trim();
+    const scoreEl    = $(el).find('[class*="score"], .rate, .rating').first().text().trim();
+    const typeEl     = $(el).find('[class*="type"], .fdi-item').first().text().trim();
+    const href  = anchor.attr('href') ?? '';
+    const title = (nameAnchor.text() || $(el).find('.d-title').text()).trim();
+    const image = img.attr('src') ?? img.attr('data-src') ?? '';
+    if (!href || !title || !href.includes('/watch/')) return;
+    const id = hrefToId(href);
+    if (seen.has(id)) return;
+    seen.add(id);
+    const rankNum = rankEl.match(/\d+/);
+    results.push({ rank: rankNum ? parseInt(rankNum[0], 10) : results.length + 1, id, title, image: proxyImageUrl(image), url: `/api/v1/anime/${id}`, score: scoreEl || undefined, type: typeEl || undefined });
+  });
+
+  return results;
+}
+
+// ─── Schedule ─────────────────────────────────────────────────────────────────
+// AniWave shows an airing schedule. The AJAX endpoint is:
+// /ajax/home/widget/schedule?day=0 (0=Sunday ... 6=Saturday, or name-based)
+
+interface ScheduleAjax { status: boolean; html: string; }
+
+const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+export async function scrapeSchedule(): Promise<ScheduleDay[]> {
+  const today = new Date();
+  const schedule: ScheduleDay[] = [];
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    const dayIndex = d.getDay(); // 0-6
+    const dayName  = DAY_NAMES[dayIndex];
+    const dateStr  = d.toISOString().slice(0, 10);
+
+    let html = '';
+    try {
+      const json = await fetchJson<ScheduleAjax>(
+        `${_UPSTREAM}/ajax/home/widget/schedule?day=${dayIndex}`,
+        { Referer: `${_UPSTREAM}/home` }
+      );
+      if (json?.html) html = json.html;
+    } catch { /* skip this day */ }
+
+    if (!html) { schedule.push({ day: dayName, date: dateStr, entries: [] }); continue; }
+
+    const $ = cheerio.load(html);
+    const entries: import('../types').ScheduleEntry[] = [];
+
+    $('div.item, .flw-item, li, .schedule-item').each((_, el) => {
+      const anchor = $(el).find('a').first();
+      const title  = $(el).find('a.d-title, .film-name, .name').first().text().trim() || anchor.text().trim();
+      const img    = $(el).find('img').first();
+      const href   = anchor.attr('href') ?? '';
+      const epText = $(el).find('[class*="ep"], .ep-item').text().trim();
+      const time   = $(el).find('[class*="time"], .schedule-time, time').text().trim();
+      if (!href || !title || !href.includes('/watch/')) return;
+      const id = hrefToId(href);
+      const epMatch = epText.match(/(\d+)/);
+      entries.push({ id, title, image: proxyImageUrl(img.attr('src') ?? img.attr('data-src') ?? ''), url: `/api/v1/anime/${id}`, episode: epMatch ? parseInt(epMatch[1], 10) : undefined, airingAt: time || undefined });
+    });
+
+    schedule.push({ day: dayName, date: dateStr, entries });
+  }
+
+  return schedule;
+}
+
+// ─── A-Z List ─────────────────────────────────────────────────────────────────
+// GET /az-list/{LETTER}?page=N  (0-9 for numbers, "other" for #)
+
+export async function scrapeAzList(letter: string, page = 1): Promise<{ items: DiscoveryAnime[]; hasNextPage: boolean }> {
+  const letterPath = letter === '0-9' ? '0-9' : letter === '#' ? 'other' : encodeURIComponent(letter.toUpperCase());
+  const url = page > 1 ? `${_UPSTREAM}/az-list/${letterPath}?page=${page}` : `${_UPSTREAM}/az-list/${letterPath}`;
+
+  let html = '';
+  try { html = await fetchHtml(url); }
+  catch (err) { logger.error({ err }, `scrapeAzList(${letter}): network error`); return { items: [], hasNextPage: false }; }
+
+  const $ = cheerio.load(html);
+  const items: DiscoveryAnime[] = [];
+  const seen = new Set<string>();
+
+  $('div.item, .flw-item').each((_, el) => {
+    const anchor     = $(el).find('a').first();
+    const nameAnchor = $(el).find('a.name.d-title, a.d-title').first();
+    const img        = $(el).find('img').first();
+    const href  = anchor.attr('href') ?? '';
+    const title = (nameAnchor.text() || $(el).find('.d-title').text()).trim();
+    const image = img.attr('src') ?? img.attr('data-src') ?? '';
+    if (!href || !title || !href.includes('/watch/')) return;
+    const id = hrefToId(href);
+    if (seen.has(id)) return;
+    seen.add(id);
+    items.push({ id, title, image: proxyImageUrl(image), url: `/api/v1/anime/${id}` });
+  });
+
+  const hasNextPage = $('a[href*="page="]').filter((_, el) => {
+    const t = $(el).text().toLowerCase();
+    return t.includes('next') || t === '›' || t === '»';
+  }).length > 0 || $('ul.pagination .page-item.active').next('.page-item').length > 0;
+
+  return { items, hasNextPage };
+}
+
+
 export async function scrapeGenres(): Promise<Genre[]> {
   const url = `${_UPSTREAM}/genre`;
 

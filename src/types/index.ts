@@ -1,4 +1,4 @@
-// ─── Search ──────────────────────────────────────────────────────────────────
+// ─── Search ───────────────────────────────────────────────────────────────────
 
 export interface SearchResult {
   id: string;
@@ -32,7 +32,7 @@ export interface Episode {
 export interface Stream {
   type: 'SUB' | 'DUB';
   url: string;
-  provider: string;          // always "AniVerse"
+  provider: string;
   headers?: Record<string, string>;
 }
 
@@ -47,12 +47,41 @@ export interface DiscoveryAnime {
   type?: string;
 }
 
+// ─── Top Anime ────────────────────────────────────────────────────────────────
+
+export interface TopAnime {
+  rank: number;
+  id: string;
+  title: string;
+  image: string;
+  url: string;
+  score?: string;
+  type?: string;
+}
+
+// ─── Schedule ─────────────────────────────────────────────────────────────────
+
+export interface ScheduleEntry {
+  id: string;
+  title: string;
+  image: string;
+  url: string;
+  episode?: number;
+  airingAt?: string;
+}
+
+export interface ScheduleDay {
+  day: string;   // e.g. "Monday"
+  date: string;  // ISO date e.g. "2025-06-16"
+  entries: ScheduleEntry[];
+}
+
 // ─── Genre ────────────────────────────────────────────────────────────────────
 
 export interface Genre {
-  id: string;   // slug used in the URL, e.g. "action"
-  name: string; // display name, e.g. "Action"
-  url: string;  // full URL to the genre page
+  id: string;
+  name: string;
+  url: string;
 }
 
 export interface GenreAnime extends DiscoveryAnime {}
@@ -94,7 +123,7 @@ export type ApiResponse<T> = ApiSuccess<T> | ApiError;
 // ─── Cache ────────────────────────────────────────────────────────────────────
 
 export interface CacheOptions {
-  ttl: number; // seconds
+  ttl: number;
 }
 
 // ─── Scraper internals ────────────────────────────────────────────────────────

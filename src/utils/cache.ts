@@ -7,8 +7,11 @@ export const CACHE_TTL = {
   EPISODES: 60 * 30,     // 30 minutes
   STREAMS: 60 * 60,      // 1 hour
   DISCOVERY: 60 * 15,    // 15 minutes
-  GENRES: 60 * 60 * 6,   // 6 hours (genre list rarely changes)
+  GENRES: 60 * 60 * 6,   // 6 hours
   INFO: 60 * 30,         // 30 minutes
+  SCHEDULE: 60 * 30,     // 30 minutes
+  TOP: 60 * 15,          // 15 minutes
+  AZ: 60 * 60 * 6,       // 6 hours
 } as const;
 
 export const CACHE_KEYS = {
@@ -16,9 +19,18 @@ export const CACHE_KEYS = {
   anime: (id: string) => `anime:${id}`,
   episodes: (id: string) => `episodes:${id}`,
   stream: (id: string, episode: string) => `stream:${id}:${episode}`,
+  // discovery
   trending: () => 'discovery:trending',
   recent: () => 'discovery:recent',
   popular: () => 'discovery:popular',
+  newest: () => 'discovery:newest',
+  added: () => 'discovery:added',
+  completed: () => 'discovery:completed',
+  latestEpisodes: (filter: string) => `discovery:latest:${filter}`,
+  top: (period: string) => `discovery:top:${period}`,
+  schedule: (date: string) => `schedule:${date}`,
+  azList: (letter: string) => `az:${letter}`,
+  // genres
   genres: () => 'genres:all',
   genrePage: (genre: string, page: number) => `genre:${genre}:${page}`,
   info: (id: string) => `info:${id}`,
