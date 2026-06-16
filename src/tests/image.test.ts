@@ -94,7 +94,7 @@ describe('isAllowedImageHost', () => {
 
 // ─── Route: GET /api/v1/image ─────────────────────────────────────────────────
 
-describe('GET /proxy/:token', () => {
+describe('GET /api/v1/proxy/:token', () => {
   it('returns 400 for a clearly invalid token', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/v1/proxy/!!!' });
     expect(res.statusCode).toBe(400);
@@ -103,7 +103,7 @@ describe('GET /proxy/:token', () => {
 
   it('returns 403 for a disallowed host', async () => {
     const token = Buffer.from('https://evil.com/img.jpg').toString('base64url');
-    const res = await app.inject({ method: 'GET', url: `/proxy/${token}` });
+    const res = await app.inject({ method: 'GET', url: `/api/v1/proxy/${token}` });
     expect(res.statusCode).toBe(403);
     expect(JSON.parse(res.body).error.code).toBe('FORBIDDEN');
   });
@@ -111,7 +111,7 @@ describe('GET /proxy/:token', () => {
   it('returns 200 and image bytes for a valid allowed URL', async () => {
     const raw = 'https://cdn.aniwaves.ru/images/naruto.jpg';
     const token = Buffer.from(raw).toString('base64url');
-    const res = await app.inject({ method: 'GET', url: `/proxy/${token}` });
+    const res = await app.inject({ method: 'GET', url: `/api/v1/proxy/${token}` });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toMatch(/image/);
     expect(res.headers['cache-control']).toMatch(/public/);
@@ -121,7 +121,7 @@ describe('GET /proxy/:token', () => {
   it('sets long immutable cache-control header', async () => {
     const raw = 'https://cdn.aniwaves.ru/images/naruto.jpg';
     const token = Buffer.from(raw).toString('base64url');
-    const res = await app.inject({ method: 'GET', url: `/proxy/${token}` });
+    const res = await app.inject({ method: 'GET', url: `/api/v1/proxy/${token}` });
     expect(res.headers['cache-control']).toContain('immutable');
   });
 });
