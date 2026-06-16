@@ -19,7 +19,7 @@ import { logger } from '../utils/logger';
 const ALLOWED_CDN_BASES = [
   'aniwaves.ru',
   'echovideo.ru',
-  'burntburst45.store',
+  'burntburst45.store',   // covers hlsxst1, hlsxst2, hlsx5cdn, etc.
 ];
 
 function isAllowedStreamHost(url: string): boolean {
