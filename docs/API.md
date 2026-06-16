@@ -1,51 +1,34 @@
 # AniVerse API
 
-A production-grade anime streaming REST API built with Fastify, TypeScript, Redis caching, and Docker.
+Production-grade anime streaming REST API. Built with Fastify, TypeScript, Redis, and Docker.
+
+**Base URL:** `https://apis.ayohost.site`  
+**Interactive Docs:** `https://apis.ayohost.site/docs`  
+**Rate Limit:** 100 requests / minute / IP
 
 ---
 
-## Base URL
+## Table of Contents
 
-```
-http://localhost:5000
-```
-
-Interactive Swagger docs → `http://localhost:5000/docs`
-
----
-
-## Authentication
-
-No authentication required. Rate limiting applies: **100 requests / minute / IP**.
-
----
-
-## Streaming & Downloading
-
-The API resolves **M3U8 stream URLs** and returns them to your client. It does not proxy video — your player hits the CDN directly using the URL and headers from the response.
-
-**Stream in VLC / mpv:**
-```bash
-# Use the Referer value from the stream's headers field
-vlc "https://cdn.example.com/ep1.m3u8" --http-referrer "https://cdn.example.com"
-mpv "https://cdn.example.com/ep1.m3u8" --referrer "https://cdn.example.com"
-```
-
-**Download with ffmpeg:**
-```bash
-# Replace <referer> with the value from stream.headers.Referer
-ffmpeg -headers "Referer: <referer>" \
-       -i "https://cdn.example.com/ep1.m3u8" \
-       -c copy episode-1.mp4
-```
+1. [Health](#health)
+2. [Search](#search)
+3. [Anime](#anime)
+4. [Streams](#streams)
+5. [Quality Levels](#quality-levels)
+6. [Download](#download)
+7. [Stream Proxy](#stream-proxy)
+8. [Discovery](#discovery)
+9. [Genres](#genres)
+10. [A-Z Browse](#a-z-browse)
+11. [Error Responses](#error-responses)
+12. [Caching](#caching)
+13. [Running Locally](#running-locally)
 
 ---
 
-## Endpoints
+## Health
 
-### Health
-
-#### `GET /health`
+### `GET /health`
 
 ```json
 {
@@ -53,52 +36,63 @@ ffmpeg -headers "Referer: <referer>" \
   "uptime": 12345,
   "redis": "ok",
   "version": "1.0.0",
-  "timestamp": "2025-01-01T00:00:00.000Z"
+  "timestamp": "2025-06-16T12:00:00.000Z"
 }
 ```
 
 ---
 
-### Search
+## Search
 
-#### `GET /api/v1/search`
+### `GET /api/v1/search`
 
-| Param   | Type    | Required | Description                    |
-|---------|---------|----------|--------------------------------|
-| `q`     | string  | ✅       | Search keyword                 |
-| `limit` | integer | ❌       | Max results (1–100, default 50)|
+| Param   | Type    | Required | Description                     |
+|---------|---------|----------|---------------------------------|
+| `q`     | string  | ✅       | Search keyword                  |
+| `limit` | integer | ❌       | Max results (1–100, default 50) |
+
+```
+GET /api/v1/search?q=naruto
+GET /api/v1/search?q=one+piece&limit=10
+```
 
 ```json
 {
   "success": true,
   "results": [
     {
-      "id": "naruto-123",
+      "id": "naruto-76396",
       "title": "Naruto",
-      "image": "https://cdn.example.com/naruto.jpg",
-      "url": "/api/v1/anime/naruto-123"
+      "image": "https://static.aniwaves.ru/resources/thumbnails/...",
+      "url": "/api/v1/anime/naruto-76396"
     }
   ],
-  "total": 1,
+  "total": 12,
   "cached": false
 }
 ```
 
 ---
 
-### Anime Details
+## Anime
 
-#### `GET /api/v1/anime/:id`
+### `GET /api/v1/anime/:id`
+
+Full metadata for a single anime.
+
+```
+GET /api/v1/anime/naruto-76396
+```
 
 ```json
 {
   "success": true,
   "anime": {
     "title": "Naruto",
-    "description": "A young ninja who seeks recognition from his peers.",
+    "description": "A young ninja who seeks recognition...",
     "aliases": "NARUTO",
     "aired": "2002-10-03",
-    "image": "https://cdn.example.com/naruto.jpg",
+    "image": "https://static.aniwaves.ru/...",
     "genres": ["Action", "Adventure"],
     "status": "Finished Airing",
     "rating": "8.1"
@@ -107,18 +101,41 @@ ffmpeg -headers "Referer: <referer>" \
 }
 ```
 
----
+### `GET /api/v1/anime/:id/info`
 
-### Episodes
+Details + full episode list in one call. Best for detail pages.
 
-#### `GET /api/v1/anime/:id/episodes`
+```json
+{
+  "success": true,
+  "info": {
+    "id": "naruto-76396",
+    "title": "Naruto",
+    "description": "...",
+    "aliases": "NARUTO",
+    "aired": "2002-10-03",
+    "image": "https://static.aniwaves.ru/...",
+    "genres": ["Action", "Adventure"],
+    "status": "Finished Airing",
+    "rating": "8.1",
+    "totalEpisodes": 220,
+    "episodes": [
+      { "number": 1, "url": "/api/v1/anime/naruto-76396/episodes/1/streams" }
+    ]
+  },
+  "cached": false
+}
+```
+
+### `GET /api/v1/anime/:id/episodes`
+
+Episode list only.
 
 ```json
 {
   "success": true,
   "episodes": [
-    { "number": 1, "url": "/api/v1/anime/naruto-123/episodes/1/streams" },
-    { "number": 2, "url": "/api/v1/anime/naruto-123/episodes/2/streams" }
+    { "number": 1, "url": "/api/v1/anime/naruto-76396/episodes/1/streams" }
   ],
   "total": 220,
   "cached": false
@@ -127,50 +144,24 @@ ffmpeg -headers "Referer: <referer>" \
 
 ---
 
-### Anime Info (details + episodes combined)
+## Streams
 
-#### `GET /api/v1/anime/:id/info`
+### `GET /api/v1/anime/:id/episodes/:episode/streams`
 
-Single request that returns full metadata **and** the complete episode list together.
+Resolve M3U8 stream URLs for an episode.
 
-```json
-{
-  "success": true,
-  "info": {
-    "id": "naruto-123",
-    "title": "Naruto",
-    "description": "A young ninja who seeks recognition from his peers.",
-    "aliases": "NARUTO",
-    "aired": "2002-10-03",
-    "image": "https://cdn.example.com/naruto.jpg",
-    "genres": ["Action", "Adventure"],
-    "status": "Finished Airing",
-    "rating": "8.1",
-    "totalEpisodes": 220,
-    "episodes": [
-      { "number": 1, "url": "/api/v1/anime/naruto-123/episodes/1/streams" },
-      { "number": 2, "url": "/api/v1/anime/naruto-123/episodes/2/streams" }
-    ]
-  },
-  "cached": false
-}
+| Param     | Type    | Description                            |
+|-----------|---------|----------------------------------------|
+| `id`      | string  | Anime slug                             |
+| `episode` | integer | Episode number                         |
+| `type`    | string  | `sub` · `dub` · `all` (default: `all`) |
+
+```
+GET /api/v1/anime/naruto-76396/episodes/1/streams
+GET /api/v1/anime/naruto-76396/episodes/1/streams?type=sub
+GET /api/v1/anime/naruto-76396/episodes/1/streams?type=dub
 ```
 
----
-
-### Stream Sources
-
-#### `GET /api/v1/anime/:id/episodes/:episode/streams`
-
-| Param     | Type    | Description                                      |
-|-----------|---------|--------------------------------------------------|
-| `id`      | string  | Anime slug                                       |
-| `episode` | integer | Episode number (≥ 1)                             |
-| `type`    | string  | `sub` · `dub` · `all` (default: `all`)           |
-
-The `type` query param filters which stream types are returned. Every stream includes a `provider` field set to **AniVerse**.
-
-**`GET /api/v1/anime/naruto-123/episodes/1/streams`** — both streams:
 ```json
 {
   "success": true,
@@ -178,100 +169,200 @@ The `type` query param filters which stream types are returned. Every stream inc
   "streams": [
     {
       "type": "SUB",
-      "url": "https://cdn.example.com/sub/master.m3u8",
-      "provider": "AniVerse",
-      "headers": { "Referer": "https://cdn.example.com" }
+      "url": "https://hlsxst1.burntburst45.store/naruto/1/master.m3u8",
+      "provider": "AniVerse"
     },
     {
       "type": "DUB",
-      "url": "https://cdn.example.com/dub/master.m3u8",
-      "provider": "AniVerse",
-      "headers": { "Referer": "https://cdn.example.com" }
+      "url": "https://hlsxst1.burntburst45.store/naruto-dub/1/master.m3u8",
+      "provider": "AniVerse"
     }
   ],
   "cached": false
 }
 ```
 
-**`?type=sub`** — SUB only:
+> ⚠️ Raw M3U8 URLs require a `Referer` header to play. Use the **Stream Proxy** endpoint or the **qualities endpoint** to get browser-safe proxied URLs.
+
+---
+
+## Quality Levels
+
+### `GET /api/v1/anime/:id/episodes/:episode/qualities`
+
+Parses the HLS master playlist and returns all available quality variants. Each quality includes a proxied stream URL ready for HLS.js and a direct download URL.
+
+| Param     | Type    | Description                   |
+|-----------|---------|-------------------------------|
+| `id`      | string  | Anime slug                    |
+| `episode` | integer | Episode number                |
+| `type`    | string  | `sub` · `dub` (default: `sub`) |
+
+```
+GET /api/v1/anime/naruto-76396/episodes/1/qualities?type=sub
+```
+
 ```json
 {
   "success": true,
-  "provider": "AniVerse",
-  "streams": [
+  "type": "SUB",
+  "qualities": [
     {
-      "type": "SUB",
-      "url": "https://cdn.example.com/sub/master.m3u8",
-      "provider": "AniVerse",
-      "headers": { "Referer": "https://cdn.example.com" }
+      "label": "720p",
+      "height": 720,
+      "bandwidth": 573467,
+      "streamUrl": "/api/v1/stream-proxy?url=aHR0cHM6...&referer=aHR0cHM6...",
+      "downloadUrl": "/api/v1/anime/naruto-76396/episodes/1/download?type=sub&quality=720p&variantUrl=aHR0cHM6..."
+    },
+    {
+      "label": "480p",
+      "height": 480,
+      "bandwidth": 300000,
+      "streamUrl": "/api/v1/stream-proxy?url=...",
+      "downloadUrl": "/api/v1/anime/naruto-76396/episodes/1/download?type=sub&quality=480p&variantUrl=..."
     }
   ],
   "cached": false
 }
+```
+
+**Usage pattern:**
+1. Fetch `/qualities` when the watch page loads
+2. Show quality labels in a selector UI (720p, 480p, etc.)
+3. When user picks a quality, load its `streamUrl` into HLS.js
+4. When user clicks download for a quality, open its `downloadUrl`
+
+---
+
+## Download
+
+### `GET /api/v1/anime/:id/episodes/:episode/download`
+
+Downloads the episode as an MP4. Uses ffmpeg server-side to mux HLS segments — the upstream CDN domain is never exposed.
+
+| Param        | Type    | Description                                                          |
+|--------------|---------|----------------------------------------------------------------------|
+| `type`       | string  | `sub` · `dub` (default: `sub`)                                      |
+| `quality`    | string  | Label for filename, e.g. `720p`                                     |
+| `title`      | string  | Anime title for filename                                             |
+| `variantUrl` | string  | base64url-encoded variant playlist URL from `/qualities` — use this to download a specific quality |
+
+```
+# Download best available quality (SUB)
+GET /api/v1/anime/naruto-76396/episodes/1/download
+
+# Download DUB
+GET /api/v1/anime/naruto-76396/episodes/1/download?type=dub
+
+# Download specific quality (use variantUrl from /qualities endpoint)
+GET /api/v1/anime/naruto-76396/episodes/1/download?type=sub&quality=720p&title=Naruto&variantUrl=<base64url>
+```
+
+Response: binary MP4 stream with headers:
+```
+Content-Type: video/mp4
+Content-Disposition: attachment; filename="Naruto_Episode_1_SUB_720p.mp4"
+X-Powered-By: AniVerse
+```
+
+**Frontend usage:**
+
+```javascript
+// Simple download button
+const url = `https://apis.ayohost.site/api/v1/anime/${id}/episodes/${ep}/download?type=sub&title=${title}`;
+window.open(url);
+
+// Quality-specific download (use downloadUrl from /qualities response)
+window.open(quality.downloadUrl);
 ```
 
 ---
 
-### Discovery
+## Stream Proxy
 
-#### `GET /api/v1/trending`
-#### `GET /api/v1/recent`
-#### `GET /api/v1/popular`
+### `GET /api/v1/stream-proxy`
 
+Proxies M3U8 manifests and TS segments through the server. Rewrites relative URIs in manifests so HLS.js can follow the full playlist chain. Required for browser playback.
+
+| Param     | Type   | Description                               |
+|-----------|--------|-------------------------------------------|
+| `url`     | string | base64url-encoded upstream M3U8/TS URL    |
+| `referer` | string | base64url-encoded Referer value (optional)|
+
+```
+GET /api/v1/stream-proxy?url=<base64url>&referer=<base64url>
+```
+
+The `streamUrl` from the `/qualities` endpoint is already a ready-to-use stream-proxy URL — use it directly in HLS.js without any additional encoding.
+
+**Encoding:**
+```javascript
+const enc = (s) => btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const proxyUrl = `https://apis.ayohost.site/api/v1/stream-proxy?url=${enc(m3u8Url)}&referer=${enc('https://apis.ayohost.site')}`;
+```
+
+---
+
+## Discovery
+
+### `GET /api/v1/trending`
+### `GET /api/v1/popular?page=`
+### `GET /api/v1/recent`
+### `GET /api/v1/newest?page=`
+### `GET /api/v1/added?page=`
+### `GET /api/v1/completed?page=`
+
+All return:
 ```json
 {
   "success": true,
   "items": [
     {
-      "id": "one-piece-100",
+      "id": "one-piece-81553",
       "title": "One Piece",
-      "image": "https://cdn.example.com/one-piece.jpg",
-      "url": "/api/v1/anime/one-piece-100",
-      "episodes": 1100
+      "image": "https://static.aniwaves.ru/...",
+      "url": "/api/v1/anime/one-piece-81553",
+      "episodes": 1100,
+      "type": "TV"
     }
   ],
-  "cached": false
-}
-```
-
----
-
-### Genres
-
-#### `GET /api/v1/genres`
-
-```json
-{
-  "success": true,
-  "genres": [
-    { "id": "action",  "name": "Action",  "url": "/api/v1/genres/action" },
-    { "id": "romance", "name": "Romance", "url": "/api/v1/genres/romance" }
-  ],
-  "total": 30,
-  "cached": false
-}
-```
-
-#### `GET /api/v1/genres/:genre?page=:page`
-
-| Param   | Type    | Description                           |
-|---------|---------|---------------------------------------|
-| `genre` | string  | Genre slug (e.g. `action`, `romance`) |
-| `page`  | integer | Page number (default 1)               |
-
-```json
-{
-  "success": true,
-  "genre": "action",
   "page": 1,
-  "hasNextPage": true,
+  "cached": false
+}
+```
+
+### `GET /api/v1/latest-episodes`
+
+Latest episode updates filtered by type.
+
+| Param    | Type   | Values                                          |
+|----------|--------|-------------------------------------------------|
+| `filter` | string | `all` · `sub` · `dub` · `chinese` · `trending` · `random` |
+
+```
+GET /api/v1/latest-episodes?filter=sub
+```
+
+### `GET /api/v1/top`
+
+Top-rated anime by time period.
+
+| Param    | Type   | Values                        |
+|----------|--------|-------------------------------|
+| `period` | string | `day` · `week` · `month` (default: `week`) |
+
+```json
+{
+  "success": true,
+  "period": "week",
   "items": [
     {
-      "id": "naruto-123",
-      "title": "Naruto",
-      "image": "https://cdn.example.com/naruto.jpg",
-      "url": "/api/v1/anime/naruto-123",
-      "episodes": 220,
+      "rank": 1,
+      "id": "fullmetal-alchemist-brotherhood-421",
+      "title": "Fullmetal Alchemist: Brotherhood",
+      "image": "https://static.aniwaves.ru/...",
+      "url": "/api/v1/anime/fullmetal-alchemist-brotherhood-421",
+      "score": "9.1",
       "type": "TV"
     }
   ],
@@ -279,9 +370,93 @@ The `type` query param filters which stream types are returned. Every stream inc
 }
 ```
 
+### `GET /api/v1/schedule`
+
+7-day airing schedule starting from today.
+
+```json
+{
+  "success": true,
+  "schedule": [
+    {
+      "day": "Monday",
+      "date": "2025-06-16",
+      "entries": [
+        {
+          "id": "one-piece-81553",
+          "title": "One Piece",
+          "image": "https://static.aniwaves.ru/...",
+          "url": "/api/v1/anime/one-piece-81553",
+          "episode": 1101,
+          "airingAt": "02:30 PM"
+        }
+      ]
+    }
+  ],
+  "cached": false
+}
+```
+
+---
+
+## Genres
+
+### `GET /api/v1/genres`
+
+```json
+{
+  "success": true,
+  "genres": [
+    { "id": "action", "name": "Action", "url": "/api/v1/genres/action" }
+  ],
+  "total": 30,
+  "cached": false
+}
+```
+
+### `GET /api/v1/genres/:genre?page=`
+
+Browse anime by genre. Paginated.
+
+```
+GET /api/v1/genres/action
+GET /api/v1/genres/romance?page=2
+```
+
+```json
+{
+  "success": true,
+  "genre": "action",
+  "page": 1,
+  "hasNextPage": true,
+  "items": [...],
+  "cached": false
+}
+```
+
+---
+
+## A-Z Browse
+
+### `GET /api/v1/az?letter=&page=`
+
+Browse all anime alphabetically.
+
+| Param    | Type    | Description                          |
+|----------|---------|--------------------------------------|
+| `letter` | string  | A–Z, `0-9`, or `#` for other        |
+| `page`   | integer | Page number (default 1)              |
+
+```
+GET /api/v1/az?letter=N
+GET /api/v1/az?letter=0-9&page=2
+```
+
 ---
 
 ## Error Responses
+
+All errors use the same envelope:
 
 ```json
 {
@@ -293,32 +468,36 @@ The `type` query param filters which stream types are returned. Every stream inc
 }
 ```
 
-| Code                | HTTP | Description                        |
-|---------------------|------|------------------------------------|
-| `INVALID_PARAMS`    | 400  | Validation / bad request           |
-| `ANIME_NOT_FOUND`   | 404  | Anime slug not found               |
-| `EPISODE_NOT_FOUND` | 404  | Episode not found                  |
-| `STREAM_NOT_FOUND`  | 404  | No streams resolved (or no match for selected type) |
-| `RATE_LIMITED`      | 429  | Too many requests                  |
-| `SCRAPER_ERROR`     | 502  | Upstream fetch failed              |
-| `INTERNAL_ERROR`    | 500  | Unexpected server error            |
+| Code                | HTTP | Description                                      |
+|---------------------|------|--------------------------------------------------|
+| `INVALID_PARAMS`    | 400  | Validation / bad request                         |
+| `ANIME_NOT_FOUND`   | 404  | Anime slug not found                             |
+| `STREAM_NOT_FOUND`  | 404  | No streams for that episode / type               |
+| `FORBIDDEN`         | 403  | Proxy host not permitted                         |
+| `RATE_LIMITED`      | 429  | Over 100 req/min per IP                          |
+| `SCRAPER_ERROR`     | 502  | Upstream fetch failed                            |
+| `INTERNAL_ERROR`    | 500  | Unexpected server error                          |
 
 ---
 
 ## Caching
 
-| Endpoint        | TTL        |
-|-----------------|------------|
-| Search          | 10 minutes |
-| Anime details   | 30 minutes |
-| Anime info      | 30 minutes |
-| Episodes        | 30 minutes |
-| Streams         | 1 hour     |
-| Discovery pages | 15 minutes |
-| Genre list      | 6 hours    |
-| Genre browse    | 15 minutes |
+| Endpoint            | TTL        |
+|---------------------|------------|
+| Search              | 10 minutes |
+| Anime details       | 30 minutes |
+| Anime info          | 30 minutes |
+| Episodes            | 30 minutes |
+| Streams             | 1 hour     |
+| Qualities           | 1 hour     |
+| Discovery pages     | 15 minutes |
+| Genre list          | 6 hours    |
+| Genre browse        | 15 minutes |
+| Schedule            | 30 minutes |
+| Top anime           | 15 minutes |
+| A-Z list            | 6 hours    |
 
-The `cached` field in every response tells you if the result came from cache.
+The `cached` field in every response indicates cache hit/miss.
 
 ---
 
@@ -339,15 +518,7 @@ Docs → `http://localhost:5000/docs`
 ```bash
 npm install
 cp .env.example .env
-# start Redis separately, then:
 npm run dev
-```
-
-### Build & start production
-
-```bash
-npm run build
-npm start
 ```
 
 ### Tests
@@ -364,10 +535,39 @@ npm run test:coverage
 | Variable             | Default                  | Description                         |
 |----------------------|--------------------------|-------------------------------------|
 | `NODE_ENV`           | `development`            | Runtime environment                 |
-| `PORT`               | `3000`                   | HTTP port                           |
+| `PORT`               | `5000`                   | HTTP port                           |
 | `HOST`               | `0.0.0.0`                | Bind address                        |
 | `REDIS_URL`          | `redis://localhost:6379` | Redis connection string             |
 | `RATE_LIMIT_MAX`     | `100`                    | Requests per minute per IP          |
 | `REQUEST_TIMEOUT_MS` | `15000`                  | Scraper HTTP timeout (ms)           |
 | `LOG_LEVEL`          | `info`                   | Pino log level                      |
 | `ALLOWED_ORIGINS`    | *(all)*                  | Comma-separated CORS allowed origins|
+| `PUBLIC_URL`         | *(empty)*                | Public base URL for proxied image URLs, e.g. `https://apis.ayohost.site` |
+
+---
+
+## Full Endpoint Reference
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check |
+| GET | `/api/v1/search` | Search anime |
+| GET | `/api/v1/anime/:id` | Anime details |
+| GET | `/api/v1/anime/:id/info` | Details + episodes combined |
+| GET | `/api/v1/anime/:id/episodes` | Episode list |
+| GET | `/api/v1/anime/:id/episodes/:ep/streams` | Resolve M3U8 stream URLs |
+| GET | `/api/v1/anime/:id/episodes/:ep/qualities` | Available quality levels |
+| GET | `/api/v1/anime/:id/episodes/:ep/download` | Download episode as MP4 |
+| GET | `/api/v1/stream-proxy` | HLS manifest + segment proxy |
+| GET | `/api/v1/trending` | Trending anime |
+| GET | `/api/v1/popular` | Most popular anime |
+| GET | `/api/v1/recent` | Recently updated |
+| GET | `/api/v1/newest` | New releases |
+| GET | `/api/v1/added` | Newly added |
+| GET | `/api/v1/completed` | Just completed |
+| GET | `/api/v1/latest-episodes` | Latest episodes (filterable) |
+| GET | `/api/v1/top` | Top anime by period |
+| GET | `/api/v1/schedule` | 7-day airing schedule |
+| GET | `/api/v1/genres` | All genres |
+| GET | `/api/v1/genres/:genre` | Browse anime by genre |
+| GET | `/api/v1/az` | A-Z anime browse |
