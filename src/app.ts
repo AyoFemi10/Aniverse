@@ -17,6 +17,7 @@ import genreRoute from './routes/genres';
 import infoRoute from './routes/info';
 import imageRoute from './routes/image';
 import streamProxyRoute from './routes/stream-proxy';
+import downloadRoute from './routes/download';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const fastify = Fastify({
@@ -118,6 +119,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await fastify.register(genreRoute,        { prefix: API_PREFIX });
   await fastify.register(imageRoute,        { prefix: `${API_PREFIX}/proxy` });   // GET /api/v1/proxy/:token
   await fastify.register(streamProxyRoute,  { prefix: API_PREFIX });              // GET /api/v1/stream-proxy
+  await fastify.register(downloadRoute,     { prefix: `${API_PREFIX}/anime` });   // GET /api/v1/anime/:id/episodes/:ep/download
 
   // ── Compatibility shim: catches /api/proxy/stream?url=<plain> ────────────────
   // The frontend calls this legacy path with a plain (non-encoded) URL.

@@ -21,6 +21,9 @@ FROM node:22-alpine AS production
 # Security: run as non-root user
 RUN addgroup -g 1001 -S nodejs && adduser -S anime -u 1001
 
+# Install ffmpeg for download endpoint
+RUN apk add --no-cache ffmpeg
+
 WORKDIR /app
 
 # Copy only production artifacts
