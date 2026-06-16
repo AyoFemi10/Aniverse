@@ -119,5 +119,17 @@ export async function buildApp(): Promise<FastifyInstance> {
   await fastify.register(imageRoute,        { prefix: `${API_PREFIX}/proxy` });   // GET /api/v1/proxy/:token
   await fastify.register(streamProxyRoute,  { prefix: API_PREFIX });              // GET /api/v1/stream-proxy
 
+  // ── Compatibility shim: catches /api/proxy/stream?url=<plain> ────────────────
+  // The frontend calls this legacy path with a plain (non-encoded) URL.
+  // We accept it here, encode it, and proxy it through the same stream logic.
+  fastify.get('/api/proxy/stream', async (request, reply) => {
+    const { url: streamUrl, referer = '' } = request.query as { url?: string; referer?: string };
+    if (!streamUrl) {
+      return reply.status(400).send({ success: false, error: { code: 'INVALID_PARAMS', message: 'url is required' } });
+    }
+    const enc = (s: string) => Buffer.from(s).toString('base64url');
+    return reply.redirect(`/api/v1/stream-proxy?url=${enc(streamUrl)}&referer=${enc(referer || 'https://apis.ayohost.site')}`);
+  });
+
   return fastify;
 }
