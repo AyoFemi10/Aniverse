@@ -296,7 +296,6 @@ export async function scrapeStreams(slug: string, episode: string): Promise<Stre
         url: m3u8,
         provider: BRAND,
         // Referer is required by the CDN – clients must forward it
-        headers: { Referer: episodeUrl },
       });
     } catch (err) {
       logger.error({ err, linkId, type }, 'resolveM3u8 error');
