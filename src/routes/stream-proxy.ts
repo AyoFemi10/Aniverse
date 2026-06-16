@@ -52,6 +52,16 @@ const errorSchema = {
 } as const;
 
 const streamProxyRoute: FastifyPluginAsync = async (fastify) => {
+  // Handle CORS preflight
+  fastify.options('/stream-proxy', async (_req, reply) => {
+    return reply
+      .header('Access-Control-Allow-Origin', '*')
+      .header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+      .header('Access-Control-Allow-Headers', '*')
+      .status(204)
+      .send();
+  });
+
   fastify.get(
     '/stream-proxy',
     {
@@ -140,7 +150,9 @@ const streamProxyRoute: FastifyPluginAsync = async (fastify) => {
           .header('Content-Type', contentType)
           .header('Access-Control-Allow-Origin', '*')
           .header('Access-Control-Allow-Headers', '*')
-          .header('Cache-Control', 'no-cache'); // M3U8 manifests must not be cached
+          .header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+          .header('Cross-Origin-Resource-Policy', 'cross-origin')
+          .header('Cache-Control', 'no-cache');
 
         const contentLength = upstream.headers['content-length'];
         if (contentLength) reply.header('Content-Length', String(contentLength));

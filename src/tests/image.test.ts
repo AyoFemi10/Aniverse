@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildTestApp } from './helpers';
-import { proxyImageUrl, decodeProxyUrl, isAllowedImageHost } from '../utils/image';
+import { proxyImageUrl, decodeProxyUrl, isAllowedImageHost, encodeProxyUrl } from '../utils/image';
 
 vi.mock('../scrapers/aniwave.scraper', () => ({
   BRAND: 'AniVerse',
@@ -48,30 +48,33 @@ afterAll(async () => {
 // ─── Unit: image utility helpers ─────────────────────────────────────────────
 
 describe('proxyImageUrl / decodeProxyUrl', () => {
-  it('encodes an upstream URL into a /proxy/ path', () => {
-    const raw = 'https://cdn.aniwaves.ru/images/naruto.jpg';
-    const proxied = proxyImageUrl(raw);
-    expect(proxied).toMatch(/\/api\/v1\/proxy\//);
-    // Must not contain the upstream domain
-    expect(proxied).not.toContain('aniwaves.ru');
+  it('returns the raw URL directly (no proxy encoding)', () => {
+    const raw = 'https://static.aniwaves.ru/resources/thumbnails/naruto.jpg';
+    expect(proxyImageUrl(raw)).toBe(raw);
   });
 
-  it('round-trips correctly', () => {
+  it('encodeProxyUrl produces a proxy path', () => {
     const raw = 'https://cdn.aniwaves.ru/images/naruto.jpg';
-    const proxied = proxyImageUrl(raw);
-    // token is the last path segment
-    const token = proxied.split('/proxy/')[1];
+    const proxied = encodeProxyUrl(raw);
+    expect(proxied).toMatch(/\/api\/v1\/proxy\//);
+    expect(proxied).not.toContain('aniwaves.ru/images');
+  });
+
+  it('encodeProxyUrl round-trips correctly', () => {
+    const raw = 'https://cdn.aniwaves.ru/images/naruto.jpg';
+    const proxied = encodeProxyUrl(raw);
+    const token = proxied.split('/api/v1/proxy/')[1];
     expect(decodeProxyUrl(token)).toBe(raw);
   });
 
-  it('does not double-encode already-proxied URLs', () => {
+  it('encodeProxyUrl does not double-encode', () => {
     const raw = 'https://cdn.aniwaves.ru/images/naruto.jpg';
-    const once = proxyImageUrl(raw);
-    const twice = proxyImageUrl(once);
+    const once = encodeProxyUrl(raw);
+    const twice = encodeProxyUrl(once);
     expect(once).toBe(twice);
   });
 
-  it('returns empty string for empty input', () => {
+  it('proxyImageUrl returns empty string for empty input', () => {
     expect(proxyImageUrl('')).toBe('');
   });
 });

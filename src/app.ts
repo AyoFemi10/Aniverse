@@ -31,7 +31,9 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // ─── Security ────────────────────────────────────────────────────────────────
   await fastify.register(helmet, {
-    contentSecurityPolicy: false, // disabled so Swagger UI works
+    contentSecurityPolicy: false,        // allow Swagger UI
+    crossOriginResourcePolicy: false,    // allow cross-origin images and media
+    crossOriginOpenerPolicy: false,      // allow video player cross-origin access
   });
 
   await fastify.register(cors, {
