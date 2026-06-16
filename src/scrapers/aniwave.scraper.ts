@@ -11,7 +11,7 @@ import { fetchHtml, fetchJson } from '../utils/http';
 import { logger } from '../utils/logger';
 import { ScraperError, NotFoundError } from '../utils/errors';
 import { proxyImageUrl } from '../utils/image';
-import type { SearchResult, AnimeDetails, Episode, Stream, DiscoveryAnime, Genre, GenreAnime, AnimeInfo } from '../types';
+import type { SearchResult, AnimeDetails, Episode, Stream, DiscoveryAnime, Genre, GenreAnime, AnimeInfo, TopAnime, ScheduleDay, ScheduleEntry } from '../types';
 
 /** Upstream base – internal use only, never returned to clients */
 const _UPSTREAM = 'https://aniwaves.ru';
