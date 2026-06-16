@@ -31,7 +31,10 @@ vi.mock('../scrapers/aniwave.scraper', () => {
     scrapeGenres: vi.fn().mockResolvedValue([]),
     scrapeGenreAnime: vi.fn().mockResolvedValue({ items: [], hasNextPage: false }),
     scrapeInfo: vi.fn().mockResolvedValue(mockInfo),
-    hrefToId: vi.fn((href: string) => href),
+    scrapeLatestEpisodes: vi.fn().mockResolvedValue([]),
+  scrapeTopAnime: vi.fn().mockResolvedValue([]),
+  scrapeSchedule: vi.fn().mockResolvedValue([]),
+  scrapeAzList: vi.fn().mockResolvedValue({ items: [], hasNextPage: false }),  hrefToId: vi.fn((href: string) => href),
   };
 });
 

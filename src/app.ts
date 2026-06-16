@@ -111,9 +111,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await fastify.register(animeRoute,   { prefix: `${API_PREFIX}/anime` });
   await fastify.register(streamRoute,  { prefix: `${API_PREFIX}/anime` });
   await fastify.register(infoRoute,    { prefix: `${API_PREFIX}/anime` });
-  await fastify.register(homeRoute,    { prefix: API_PREFIX });   // all discovery + home endpoints
+  await fastify.register(homeRoute,    { prefix: API_PREFIX });
   await fastify.register(genreRoute,   { prefix: API_PREFIX });
-  await fastify.register(imageRoute,   { prefix: API_PREFIX });   // GET /api/v1/image?url=...
+  await fastify.register(imageRoute,   { prefix: '/proxy' });     // GET /proxy/:token
 
   return fastify;
 }

@@ -41,18 +41,23 @@ export const ALLOWED_IMAGE_HOSTS = new Set([
   'cdn.aniwaves.ru',
   'img.aniwaves.ru',
   'static.aniwaves.ru',
+  'resources.aniwaves.ru',
+  // common anime CDN patterns — covers subdomains automatically via endsWith check
   'gogocdn.net',
   'cdn.gogocdn.net',
   'img9.9anime.id',
   'image.tmdb.org',
   'cdn.myanimelist.net',
   'media.kitsu.io',
+  // cover any subdomain of aniwaves.ru not explicitly listed
 ]);
 
 /** Returns true if the decoded URL's hostname is in the allowlist */
 export function isAllowedImageHost(url: string): boolean {
   try {
     const { hostname } = new URL(url);
+    // Allow any subdomain of aniwaves.ru (cdn., static., img., etc.)
+    if (hostname === 'aniwaves.ru' || hostname.endsWith('.aniwaves.ru')) return true;
     return [...ALLOWED_IMAGE_HOSTS].some(
       (allowed) => hostname === allowed || hostname.endsWith(`.${allowed}`),
     );
