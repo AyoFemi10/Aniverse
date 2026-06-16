@@ -166,7 +166,7 @@ const streamProxyRoute: FastifyPluginAsync = async (fastify) => {
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
               Referer: referer,
-              Origin: new URL(referer).origin,
+              Origin: 'https://apis.ayohost.site',
               Accept: '*/*',
             },
             maxRedirects: 5,
@@ -188,7 +188,7 @@ const streamProxyRoute: FastifyPluginAsync = async (fastify) => {
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
               Referer: referer,
-              Origin: new URL(referer).origin,
+              Origin: 'https://apis.ayohost.site',
               Accept: '*/*',
             },
             maxRedirects: 5,

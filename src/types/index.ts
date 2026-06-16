@@ -33,7 +33,6 @@ export interface Stream {
   type: 'SUB' | 'DUB';
   url: string;
   provider: string;
-  headers?: Record<string, string>;
 }
 
 // ─── Discovery ────────────────────────────────────────────────────────────────
